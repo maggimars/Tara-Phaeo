@@ -1,0 +1,878 @@
+---
+title: "OrthoResults"
+author: "Maggi Brisbin"
+date: "12/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=8, fig.height=5 )
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r , message  = FALSE}
+
+library(ggplot2)
+library(tidyr)
+library("dplyr")
+library("gridExtra")
+library(CoDaSeq)
+
+library(viridis)
+library(UpSetR)
+#library(knitr)
+library(magrittr)
+library(ggspatial)
+library(patchwork)
+library(ggrepel)
+library(stringr)
+library(scatterpie)
+library(ggpubr)
+library(stringi)
+
+library(Vennerable)
+setwd("~/desktop/phaeo-tara")
+
+`%ni%` = Negate(`%in%`)
+```
+
+```{r}
+orthos <- read.csv("~/desktop/phaeo-tara/Orthogroups.GeneCount.csv", row.names = 1)
+```
+
+
+```{r}
+
+orthos[orthos >0] <- 1
+
+
+datalist<- list()
+
+for (i in 1:10) {
+  newdf <- orthos[i]
+  newdf$ogs <- row.names(newdf)
+  newdf1<- newdf[newdf[1] != 0,]
+  name<- as.character(names(orthos)[i])
+  famlist <- as.vector(as.character(newdf1[[2]]))
+  datalist[[name]] <- famlist
+}
+
+strain_order <- c("P_antarctica_jgi", "P_antarctica_caron", "P_antarctica_ccmp1374", "P_globosa_jgi", "P_globosa_ccmp1528", "P_sp_ccmp2710" ,  "P_cordata_ccmp3104", "P_cordata_rcc1383", "P_rex_ccmp2000" , "P_jahnii_ccmp2496"  )
+
+species <- c("antarctica", "antarctica", "antarctica", "globosa",  "globosa",  "globosa" , "cordata", "cordata",  "rex", "jahnii" )
+
+seqsource<- c("jgi", "MMETSP", "MMETSP", "jgi", "oist", "MMETSP", "oist", "MMETSP", "MMETSP", "oist")
+
+metaD<- data.frame(cbind(strain_order, species, seqsource))
+
+
+upset(fromList(datalist), sets = rev(strain_order), order.by = "degree", keep.order = TRUE, set.metadata =  list(data = metaD, plots = list(list(type = "matrix_rows", column = "species", colors = c(antarctica = "blue", globosa = "red", cordata = "yellow", rex = " orange", jahnii = "green")) )))
+
+```
+
+
+
+
+```{r}
+upset(fromList(datalist), sets = rev(strain_order), order.by = "freq", keep.order = TRUE, set.metadata =  list(data = metaD, plots = list(list(type = "matrix_rows", column = "species", colors = c(antarctica = "blue", globosa = "red", cordata = "yellow", rex = " orange", jahnii = "green") ) )))
+
+```
+
+
+
+
+```{r}
+orthos_noRCC <- orthos %>% dplyr::select(-one_of(c("P_cordata_rcc1383")))
+
+orthos_noRCC$sums <- rowSums(orthos_noRCC)
+
+orthos_core <- orthos_noRCC %>% filter(sums == 9)
+dim(orthos_core)
+```
+
+get counts for genes in these from original table
+```{r}
+# filter to only get rows with core genes
+coregenes <- row.names(orthos_core)
+orthos_1 <- read.csv("~/desktop/phaeo-tara/Orthogroups.GeneCount.csv", row.names = 1) 
+orthos_1$OG <- row.names(orthos_1)
+
+orthos2<- orthos_1 %>% dplyr::select(-one_of("P_cordata_rcc1383")) %>% filter(OG %in% coregenes) %>% dplyr::select(-one_of("OG"))
+colSums(orthos2)
+# then colSums to get total in core group for each species 
+
+```
+```{r}
+orthobreakdown <- read.csv("Results_Dec21/Statistics_PerSpecies_nopercents.csv")[1:4,]
+row.names(orthobreakdown)<- orthobreakdown$X
+orthobreakdown<- orthobreakdown %>% dplyr::select(-one_of(c("X")))
+orthT<- data.frame(t(orthobreakdown))
+orthT$sumss <- rowSums(orthT)
+orthT$percent_unassigned<- orthT$Number.of.unassigned.genes/ orthT$sumss
+orthT$percent_species_specific <- orthT$Number.of.genes.in.species.specific.orthogroups/ orthT$sumss
+orthT$percent_core <- orthT$Core/ orthT$sumss
+orthT$percent_shared <- orthT$in.shared.ortho/ orthT$sumss
+orthT$strain <- row.names(orthT)
+orthT_final <- orthT %>%  dplyr::select(strain, percent_unassigned, percent_species_specific, percent_core, percent_shared)
+
+orthobreakLong <- pivot_longer(orthT_final, cols = !("strain"), names_to = "orthos")
+
+orthopie<-ggplot(orthobreakLong, aes(x=2, y=value, fill = orthos)) + facet_wrap(~strain, nrow = 4 )+ geom_bar(position = 'fill', stat= "identity", color = "black", width = 5) + xlab("") + ylab("") + theme_void() +scale_fill_manual(values = colors) +
+coord_polar("y") 
+
+orthopie
+```
+
+
+Ortho_Annotation
+
+```{r}
+orthogroups <- read.csv("Results_Dec21/Orthogroups.tsv", sep = "\t")
+```
+subset per species 
+break at commas to new rows
+then pivot longer ... ?
+
+```{r}
+
+ortho_gene_mapping <- function(strainnum) {
+  st <- names(orthogroups)[[strainnum]]
+  orthos<- orthogroups %>% dplyr::select(Orthogroup, st)
+  orthos<- orthos[orthos[[st]] != "",]
+  ortho_sepped <- separate(orthos, st, c(letters, LETTERS, 1:100), sep = ",", fill = "right")
+  long_ortho_sepped <- pivot_longer(ortho_sepped, cols = -c(Orthogroup))
+  long_ortho<- long_ortho_sepped[!is.na(long_ortho_sepped$value),c(1,3)]
+  return(long_ortho)
+}
+ortho_gene_mapping(5)
+
+
+```
+
+get jgi antarctica Kegg annotations: 
+
+```{r}
+ant_kegg <- read.csv("prots/P_antarctica_jgi_kegg.csv",header = TRUE) %>% filter(ko!="")
+
+#9,258 annotations
+```
+
+% of genes in orthogroups annotated
+```{r}
+
+ortho_sets <- function(strainnum) {
+  st <- names(orthogroups)[[strainnum]]
+  sharedWcore <- row.names(orthos_noRCC[orthos_noRCC[[st]]==1 & orthos_noRCC[["summed"]]>=2,]) 
+  
+  unique <-  row.names(orthos_noRCC[orthos_noRCC[[st]]==1 & orthos_noRCC[["summed"]]==1,])
+  
+  shared <- sharedWcore[sharedWcore %ni% orthos_core]
+  
+  annotSetList <- list("shared" = shared, "unique" = unique)
+  
+  return(annotSetList)
+}
+
+gene_sets <- function(strainnum){
+  ortho_sets<- ortho_sets(strainnum)
+  long_sepped<- ortho_gene_mapping(strainnum)
+  
+  genes_in_core <-long_sepped[long_sepped$Orthogroup %in% orthos_core ,]
+  names(genes_in_core) <- c("Orthogroup", "gene")
+
+  genes_in_shared <- long_sepped[long_sepped$Orthogroup %in% ortho_sets[["shared"]],]
+  names(genes_in_shared) <- c("Orthogroup", "gene")
+  
+  genes_unique <- long_sepped[long_sepped$Orthogroup %in% ortho_sets[["unique"]],]
+  names(genes_unique) <- c("Orthogroup", "gene")
+  
+  geneset_framelist <- list("core" = genes_in_core, "shared" = genes_in_shared, "unique" = genes_unique)
+  return(geneset_framelist)   
+}
+
+
+kegg_sets <- function(strainnum, kegg_annots) {
+  st <- names(orthogroups)[[strainnum]]
+  gene_lists<- gene_sets(strainnum)
+  kegg_incore <- merge(kegg_annots, gene_lists[["core"]], by = "gene")
+  kegg_incore$set <- "core"
+  kegg_incore$color <- "#0181BB"
+  incore<- dim(kegg_incore)[1]
+  percent_incore<- dim(kegg_incore)[1] / orthT[c(st), c("Core")]
+  
+  kegg_inshared <-  merge(kegg_annots, gene_lists[["shared"]], by = "gene")
+  shared<-  dim(kegg_inshared)[1]
+  shared_percent<- dim(kegg_inshared)[1] / orthT[c(st), c("in.shared.ortho")] 
+  #
+  kegg_inshared$set <- "shared"
+  kegg_inshared$color <- "#77DAD5"
+  
+  unique<- merge(kegg_annots, gene_lists[["unique"]], by = "gene")
+  unique$set <- "unique"
+  unique$color <- "#85bfd5"
+  uniques<- dim(unique)[1] 
+  unique_percent<- dim(unique)[1] / orthT[c(st), c("Number.of.genes.in.species.specific.orthogroups")] 
+  
+  all_orthos <- c(gene_lists[["unique"]]$gene, gene_lists[["shared"]]$gene, gene_lists[["core"]]$gene)
+
+  unassigned_percent <- dim(kegg_annots %>% filter( gene %ni% all_orthos))[1] / orthT[c(st), c("Number.of.unassigned.genes")] 
+  unassigneds<- dim((kegg_annots) %>% filter( gene %ni% all_orthos))[1]
+  unassigned<-kegg_annots %>% filter( gene %ni% all_orthos)
+  unassigned$Orthogroup <- "none"
+  unassigned$set <- "unassigned"
+  unassigned$color <- "#fac92c" 
+
+  all<- rbind(kegg_incore,kegg_inshared, unique, unassigned)
+  
+  frame4percentplot <- data.frame(c("core", "shared", "unique", "unassigned"),c(percent_incore, shared_percent, unique_percent, unassigned_percent), c(1-percent_incore, 1-shared_percent, 1-unique_percent, 1-unassigned_percent) )
+names(frame4percentplot) <-c("type", "annotated", "unannotated")
+
+  longpercentframe<- pivot_longer(frame4percentplot,cols = !("type") )
+  
+  label_vals=c( orthT[c(st), c("Core")],"", orthT[c(st), c("in.shared.ortho")], "", orthT[c(st), c("Number.of.genes.in.species.specific.orthogroups")] ,"", orthT[c(st), c("Number.of.unassigned.genes")], "")
+  
+  kegg_set_list <- list("all" = all, "percentplot"=  longpercentframe, "labels"= label_vals)
+  return(kegg_set_list)
+}
+
+```
+
+
+
+```{r, fig.width =4}
+annotated_orthogroup_plot <- function(strainnum) {
+  strain <- names(orthogroups)[strainnum]
+  kegg_annot_result <- read.csv(paste0("prots/", strain, "_kegg.csv"), header = TRUE) %>% filter(ko!="")
+  kegglists<-kegg_sets(strainnum, kegg_annot_result)
+  plot_title <- strain
+  plot <- ggplot(kegglists$percentplot, aes(x=type, y=value, fill = name)) + geom_bar(stat = "identity") + theme_classic()+ ggtitle(plot_title) +xlab("") +ylab("") + scale_fill_manual(values = c("#085782", "#A3BAC7")) + labs(fill = "KEGG") +scale_y_continuous(expand = c(0, 0)) + geom_text(aes(y= 0), label= kegglists$labels, vjust = -1) + theme(plot.title = element_text(size = 9, face = "bold")) + theme(axis.text.x = element_text(angle = 45,  hjust = 1))
+  return(plot)
+}
+
+
+caron_oplot <- annotated_orthogroup_plot(2)
+mmetspAnt_oplot <- annotated_orthogroup_plot(3)
+jgiant_oplot<- annotated_orthogroup_plot(4)
+
+globosa_oplot<- annotated_orthogroup_plot(7)
+jgiglob_oplot <-annotated_orthogroup_plot(8)
+sp_oplot<- annotated_orthogroup_plot(11)
+
+cordata_oplot<- annotated_orthogroup_plot(5)
+
+rex_oplot <-annotated_orthogroup_plot(10)
+
+jahnii_oplot<-annotated_orthogroup_plot(9)
+
+
+
+ggarrange(caron_oplot, mmetspAnt_oplot, jgiant_oplot, globosa_oplot, jgiglob_oplot, sp_oplot, cordata_oplot, rex_oplot, jahnii_oplot, common.legend = TRUE)
+
+##remember ggarrange can take a list of plots with plotlist=
+```
+
+
+of the annotated genes - how many are in each category?
+
+```{r, fig.width = 4}
+
+kegg_plot <- function(strainnum) {
+  strain <- names(orthogroups)[strainnum]
+  kegg_annots <- read.csv(paste0("prots/", strain, "_kegg.csv"), header = TRUE) %>% filter(ko!="")
+  kegg_list <- kegg_sets(strainnum, kegg_annots)
+  setframe <- kegg_list$all %>%  dplyr::count(set)
+  setframe<-data.frame(setframe)
+  target<- c("core", "shared", "unique", "unassigned")
+  setframe<-setframe[match(target, setframe$set),]
+  setframe$percent <- setframe$n/sum(setframe$n)
+  setframe$y_label <- rev(cumsum(rev(setframe$percent))) - 0.5 * setframe$percent
+  setframe$set <- factor(setframe$set, levels = c("core", "shared", "unique", "unassigned"))
+  
+  plot_title <- names(orthogroups)[strainnum]
+  sub_title <-  paste(dim(kegg_annots)[1], " annotated proteins")
+    
+  plot <-  ggplot(setframe, aes(x=1, y=percent, fill = set)) + geom_bar(stat = "identity") + theme_classic()+ ylab("") + scale_fill_manual(values = colors) + labs(fill = "") +scale_y_continuous(expand = c(0, 0)) + geom_text(aes(y= y_label), label= setframe$n, vjust = 0.5) +theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())  +  labs(title = plot_title,
+              subtitle = c(sub_title)) + theme(plot.title = element_text(size = 9, face = "bold"), plot.subtitle = element_text(size = 7.5 ))
+  
+  return(plot)
+}
+
+
+caron_kplot <- kegg_plot(2)
+mmetspAnt_kplot <- kegg_plot(3)
+jgiant_kplot<- kegg_plot(4)
+
+globosa_kplot<- kegg_plot(7)
+jgiglob_kplot <-kegg_plot(8)
+sp_kplot<- kegg_plot(11)
+
+cordata_kplot<- kegg_plot(5)
+
+rex_kplot <-kegg_plot(10)
+
+jahnii_kplot<-kegg_plot(9)
+
+
+
+ggarrange(caron_kplot, mmetspAnt_kplot, jgiant_kplot, globosa_kplot, jgiglob_kplot, sp_kplot, cordata_kplot, rex_kplot, jahnii_kplot, common.legend = TRUE)
+
+```
+
+
+pathway map for K's in orthogroups 
+& for Ks in core
+maybe use pathviewer instead? ... never got the full metabolism plot to work before 
+```{r}
+# foripath<- all %>% dplyr::select(ko, color)
+# foripath$color <- as.character(foripath$color)
+# foripath$ko <- as.character(foripath$ko)
+# 
+# write.csv(data.frame(foripath), "pcordata_ipath.csv", quote =FALSE, row.names = FALSE)
+```
+
+Import Pfam annotation results from dammit and fix pfam annotation formatting to match that used in the pfam2go mapping file:
+```{r,  warning= FALSE, message = FALSE}
+pfamannot<- read.csv("data/P_cordata_ccmp3104_pfam.csv", header = TRUE)
+pfamannot$Dbxref <- stri_sub(pfamannot$Dbxref , from = 2, to = -2)
+pfamannot$Pfam <- gsub("\\..*","", pfamannot$Dbxref)
+pfamannot<- pfamannot[,-1]
+
+```
+**13,548 transcripts have good (score<1e-05) pfam annotations**
+
+Import and format trinity ID to dammit transcript ID mapping file:
+
+
+
+
+```{r}
+pc_orthos <- ortho_gene_mapping(5) %>% separate(value, c("gene"), sep = "\\.")
+
+##everything else is the same after removing those characters ....
+
+Pc_orthosets <- ortho_sets(5)
+
+
+gene_sets4pfam <- function(strainnum){
+  ortho_sets<- ortho_sets(strainnum)
+  long_sepped<- ortho_gene_mapping(strainnum)%>% separate(value, c("gene"), sep = "\\.")
+  
+  genes_in_core <-long_sepped[long_sepped$Orthogroup %in% orthos_core ,]
+  names(genes_in_core) <- c("Orthogroup", "gene")
+
+  genes_in_shared <- long_sepped[long_sepped$Orthogroup %in% ortho_sets[["shared"]],]
+  names(genes_in_shared) <- c("Orthogroup", "gene")
+  
+  genes_unique <- long_sepped[long_sepped$Orthogroup %in% ortho_sets[["unique"]],]
+  names(genes_unique) <- c("Orthogroup", "gene")
+  
+  geneset_framelist <- list("core" = genes_in_core, "shared" = genes_in_shared, "unique" = genes_unique)
+  return(geneset_framelist)   
+}
+
+
+pfam_sets <- function(strainnum, pfam_annots) {
+  st <- names(orthogroups)[[strainnum]]
+  gene_lists<- gene_sets4pfam(strainnum)
+  #start here 
+  pfam_incore <- merge(pfam_annots, gene_lists[["core"]], by = "gene")
+  pfam_incore$set <- "core"
+  incore<- dim(pfam_incore)[1]
+  percent_incore<- dim(pfam_incore)[1] / orthT[c(st), c("Core")]
+  
+  pfam_inshared <-  merge(pfam_annots, gene_lists[["shared"]], by = "gene")
+  shared<-  dim(pfam_inshared)[1]
+  shared_percent<- dim(pfam_inshared)[1] / orthT[c(st), c("in.shared.ortho")] 
+  pfam_inshared$set <- "shared"
+  
+  unique<- merge(pfam_annots, gene_lists[["unique"]], by = "gene")
+  unique$set <- "unique"
+  uniques<- dim(unique)[1] 
+  unique_percent<- dim(unique)[1] / orthT[c(st), c("Number.of.genes.in.species.specific.orthogroups")] 
+  
+  all_orthos <- c(gene_lists[["unique"]]$gene, gene_lists[["shared"]]$gene, gene_lists[["core"]]$gene)
+
+  unassigned_percent <- dim(pfam_annots %>% filter( gene %ni% all_orthos))[1] / orthT[c(st), c("Number.of.unassigned.genes")] 
+  unassigneds<- dim((pfam_annots) %>% filter( gene %ni% all_orthos))[1]
+  unassigned<-pfam_annots %>% filter( gene %ni% all_orthos)
+  unassigned$Orthogroup <- "none"
+  unassigned$set <- "unassigned"
+
+  all<- rbind(pfam_incore,pfam_inshared, unique, unassigned)
+  
+  frame4percentplot <- data.frame(c("core", "shared", "unique", "unassigned"),c(percent_incore, shared_percent, unique_percent, unassigned_percent), c(1-percent_incore, 1-shared_percent, 1-unique_percent, 1-unassigned_percent) )
+names(frame4percentplot) <-c("type", "annotated", "unannotated")
+
+  longpercentframe<- pivot_longer(frame4percentplot,cols = !("type") )
+  
+  label_vals=c( orthT[c(st), c("Core")],"", orthT[c(st), c("in.shared.ortho")], "", orthT[c(st), c("Number.of.genes.in.species.specific.orthogroups")] ,"", orthT[c(st), c("Number.of.unassigned.genes")], "")
+  
+  pfam_set_list <- list("all" = all, "percentplot"=  longpercentframe, "labels"= label_vals)
+  return(pfam_set_list)
+}
+
+
+```
+
+```{r, fig.width =4}
+pfam_orthogroup_plot <- function(strainnum, pfam_annots) {
+  strain <- names(orthogroups)[strainnum]
+  #pfam_result <- read.csv(paste0("prots/", strain, "_kegg.csv"), header = TRUE) %>% filter(ko!="")
+  pfamlists<-pfam_sets(strainnum, pfam_annots)
+  plot_title <- strain
+  plot <- ggplot(pfamlists$percentplot, aes(x=type, y=value, fill = name)) + geom_bar(stat = "identity") + theme_classic()+ ggtitle(plot_title) +xlab("") +ylab("Proportion of genes") + scale_fill_manual(values = c("#085782", "#A3BAC7")) + labs(fill = "Pfam") +scale_y_continuous(expand = c(0, 0)) + geom_text(aes(y= 0), label= pfamlists$labels, vjust = -1) + theme(plot.title = element_text(size = 9, face = "bold")) + theme(axis.text.x = element_text(angle = 45,  hjust = 1))
+  return(plot)
+}
+
+
+cordata_oplot<- pfam_orthogroup_plot(5, pfamannots)
+
+cordata_oplot
+#ggarrange(antarctica_oplot, cordata_oplot, globosa_oplot,rex_oplot, sp_oplot, common.legend = TRUE)
+
+```
+
+
+```{r, fig.width = 4}
+
+pfam_plot <- function(strainnum) {
+  strain <- names(orthogroups)[strainnum]
+  #import and format pfam annotation results
+  pfam_res<-  read.csv(paste0("prots/", strain, "_pfam.csv"), header = TRUE)
+  pfam_res$Dbxref <- stri_sub(pfam_res$Dbxref , from = 2, to = -2)
+  pfam_res$Pfam <- gsub("\\..*","", pfam_res$Dbxref)
+  pfam_res<- pfam_res[,-1]
+  #import and format gene name mapping file (from dammit)
+  transcript2dammit <- read.csv(paste0("data/", strain, ".fasta.dammit/", strain, ".fasta.dammit.namemap.csv", header = TRUE)) %>% separate(original, c("gene"), sep = " ") 
+  names(transcript2dammit) <- c("gene", "seqid")
+
+
+pfamannots <- merge(pfam_res, transcript2dammit, by = "seqid")
+  
+
+  kegg_list <- kegg_sets(strainnum, kegg_annots)
+  setframe <- kegg_list$all %>%  dplyr::count(set)
+  setframe<-data.frame(setframe)
+  target<- c("core", "shared", "unique", "unassigned")
+  setframe<-setframe[match(target, setframe$set),]
+  setframe$percent <- setframe$n/sum(setframe$n)
+  setframe$y_label <- rev(cumsum(rev(setframe$percent))) - 0.5 * setframe$percent
+  setframe$set <- factor(setframe$set, levels = c("core", "shared", "unique", "unassigned"))
+  
+  plot_title <- names(orthogroups)[strainnum]
+  sub_title <-  paste(dim(pfam_res)[1], " annotated proteins")
+    
+  plot <-  ggplot(setframe, aes(x=1, y=percent, fill = set)) + geom_bar(stat = "identity") + theme_classic()+ ylab("") + scale_fill_manual(values = colors) + labs(fill = "") +scale_y_continuous(expand = c(0, 0)) + geom_text(aes(y= y_label), label= setframe$n, vjust = 0) +theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())  +  labs(title = plot_title,
+              subtitle = c(sub_title)) + theme(plot.title = element_text(size = 9, face = "bold"), plot.subtitle = element_text(size = 7.5 ))
+  
+  return(plot)
+}
+
+
+rex_kplot <-kegg_plot(10)
+globosa_kplot<- kegg_plot(7)
+cordata_kplot<- kegg_plot(5)
+antarctica_kplot<- kegg_plot(4)
+sp_kplot<- kegg_plot(11)
+
+
+ggarrange(antarctica_kplot, cordata_kplot, globosa_kplot,rex_kplot, sp_kplot, common.legend = TRUE, nrow =1)
+
+```
+
+
+
+
+
+Import and format pfam2go mapping file:
+```{r, message=FALSE, warnings = FALSE}
+pfam2go <- read.csv("data/pfam2go4R.txt", header = FALSE)
+pfam2go1 <- pfam2go %>%
+  separate(V1, c('V1_1', 'V1_2'), sep = '>') %>%
+  separate(V1_1, c("Pfam", "name"), sep = " ") %>%
+  separate(V1_2, c("GO_desc", "GO"), sep = ";")
+pfam2go1$GO <-stri_sub(pfam2go1$GO, from = 2)
+
+```
+
+Create transcript to GO reference: 
+```{r,  warning= FALSE, message = FALSE}
+pfam1 <- merge(pfamannot, pfam2go1, by = "Pfam")
+pfam2<- merge(pfam1, trinity2dammit1, by ="seqid" )
+
+
+pfam3 <- merge(pfam2, sigDEgenes, by = "trinity")
+pfamUP <- pfam3[pfam3$log2FoldChange >0 & pfam3$padj <0.05,]
+pfam4<-merge(pfamannot, trinity2dammit1, by = "seqid")
+pfam5<-merge(pfam4, sigDEgenes, by = "trinity")
+length(unique(pfam1$seqid))
+```
+*7119 annotated transcripts also have a GO term assigned.*
+
+
+
+
+
+MetaT and MetaG metadata -
+```{r}
+metaT_metaData <- read.csv("PRJEB6609_metaT_wenv_PE.csv")
+
+NAsta<-c("TARA_141", "TARA_142",  "TARA_146", "TARA_145", "TARA_148", "TARA_149", "TARA_150", "TARA_151" ,"TARA_152", "TARA_004")
+
+metaT_metaDataSts <-  metaT_metaData %>% dplyr::filter(Station %in% NAsta)
+
+dim(metaT_metaDataSts)
+
+```
+
+```{r}
+metaT_metaDataNA <- metaT_metaData %>%dplyr:: filter(OS.region == "[NAO] North Atlantic Ocean (MRGID:1912)")
+
+dim(metaT_metaDataNA)
+```
+
+map tutorial: https://www.r-spatial.org/r/2018/10/25/ggplot2-sf.html
+
+```{r}
+library(ggspatial)
+library("rnaturalearth")
+library("rnaturalearthdata")
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+ggplot(data = world) + geom_sf() +theme_test() + geom_point(data = metaT_metaDataNA, aes (x= Longitude, y= Latitude  ))
+```
+
+get list of samples for mapping - Start with 5-20 µm fractions in the Surface
+
+```{r}
+metaT_metaDataNA_surf5 <- metaT_metaDataNA %>%dplyr:: filter(Fraction.lower...µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession)
+
+write.table(metaT_metaDataNA_surf5, "PRJEB6609_metaT_ERR_NA5to20surf.list", quote = FALSE, row.names=FALSE )
+```
+
+
+
+MetaG 
+
+```{r}
+metaG_metaData <- read.csv("PRJEB4352_metaG_wenv_PE.csv")
+```
+
+
+```{r}
+metaG_metaDataNA <- metaG_metaData %>%dplyr:: filter(OS.region == "[NAO] North Atlantic Ocean (MRGID:1912)")
+
+dim(metaG_metaDataNA)
+```
+
+```{r}
+
+meta4plot <- metaG_metaDataNA %>% dplyr::select(Latitude, Longitude, Station)
+
+meta4plot <- meta4plot[!duplicated(meta4plot$Station),]
+meta4plot$Station<- str_sub(meta4plot$Station, 6)
+
+ggplot(data = world) + geom_sf() +theme_test() + geom_point(data = meta4plot, aes (x= Longitude, y= Latitude  )) 
+```
+
+```{r}
+
+stations<-ggplot(data = world) + geom_sf(lwd = 0) +theme_void() +geom_point(data = meta4plot, aes (x= Longitude, y= Latitude )) + geom_text_repel(data =meta4plot, aes(x= Longitude, y= Latitude, label = Station), size = 3)  +
+    coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE)
+
+stations
+```
+
+```{r}
+metaG_metaDataNA_surf5 <- metaG_metaDataNA %>%dplyr:: filter(Fraction.lower..µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession)
+
+write.table(metaG_metaDataNA_surf5, "PRJEB4352_metaG_ERR_NA5to20surf.list", quote = FALSE, row.names=FALSE )
+```
+
+
+test run: 
+North Atlantic - mapped to concatenated references
+
+```{r}
+metaG_metaDataNA_surf5 <- metaG_metaDataNA %>%dplyr:: filter(Fraction.lower..µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession, Station, Device, Latitude, Longitude, Depth..nominal, Fraction.lower..µm., Fraction.upper..µm., MP.biome, BG.province)
+
+row.names(metaG_metaDataNA_surf5) <- metaG_metaDataNA_surf5$run_accession
+
+readcounts <- c(204139639, 204384011, 173976202, 181163832, 171053618, 159974552, 179140057, 139442782, 167267129, 191132398, 182785130)
+
+```
+
+```{r}
+metaGmapped <- read.table("PhaeoCat_nt.merged.numreads", row.names =1, header = TRUE)
+#362,262 rows
+
+metaGmapped$rowsums <- rowSums(metaGmapped)
+
+metaGmapped<- metaGmapped[metaGmapped$rowsums > 0,]
+
+metaGmapped<- subset(metaGmapped, select =  -c(rowsums))
+
+#100,564 with non zero counts
+
+metaGmapped$strain <- sapply(row.names(metaGmapped), function (x) paste(strsplit(x, '_')[[1]][1], strsplit(x, '_')[[1]][2], strsplit(x, '_')[[1]][3], sep= '_') )
+
+metaGmapped_sums <- as.data.frame(metaGmapped %>% group_by(strain) %>% summarize_all(funs(sum))) 
+
+row.names(metaGmapped_sums) <- metaGmapped_sums$strain
+metaGmapped_sums <- metaGmapped_sums[,-1]
+
+
+metaGmapped_sums_t <- t(metaGmapped_sums)
+
+metaGmapped_sums_final<-as.data.frame((metaGmapped_sums_t / readcounts) * 100 )
+
+metaGmapped_sums_final$totals <- rowSums(metaGmapped_sums_final)
+
+latlongs<- metaG_metaDataNA %>% dplyr::select(run_accession, Latitude, Longitude, Station)
+
+metaGmapped_sums_final$run_accession<- row.names(metaGmapped_sums_final)
+
+metaGmapped_sums_final<- merge(metaGmapped_sums_final, latlongs, by = "run_accession")
+
+metaGmapped_sums_final$Station<- str_sub(metaGmapped_sums_final$Station, 5)
+
+
+colors <- c("#0181BB", "#77DAD5", "#85bfd5", "#fac92c" , "#E4E4Af", "#ef3c23", "#ed8e83", "#215F38", "#cfe5cc", "#AB3B84") 
+            
+
+long<- metaGmapped_sums_final %>%  pivot_longer(!c(run_accession, Latitude, Longitude, Station, totals), names_to = "strain", values_to = "value" )
+
+metaGcoxcomb<-ggplot(long, aes(x=factor(strain), y=value, fill = strain)) + geom_bar(stat= "identity", width=1, color = "black") + facet_wrap(~Station, nrow = 4 ) + coord_polar() + xlab("") + ylab("") + theme_void() +scale_fill_manual(values = colors)  + ggtitle("metaG") + theme(legend.position="none")
+
+
+metaGcoxcomb
+```
+
+not scaled for size of reference (number of genes or bps)?
+
+
+
+
+```{r}
+
+strainlist <- unique(long$strain)
+
+metaG_pies<-ggplot(data = world) + geom_sf(lwd = 0) + geom_scatterpie(data=metaGmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r = totals*4), cols = strainlist, color=NA, alpha=.8 ) + theme_void() + theme(legend.position = "none")  + scale_fill_manual(values = colors)
+metaG_pies
+```
+```{r}
+metaGpies_zoom<-ggplot(data = world) + geom_sf(lwd = 0) + theme_bw() + geom_scatterpie(data=metaGmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r=2), cols = strainlist, color=NA, alpha=.8 ) +coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaG") + theme(legend.position = "none") + scale_fill_manual(values = colors) 
+metaGpies_zoom
+```
+
+
+
+Percent of reads  .... mapping to all references 
+```{r}
+#plot percent of all reads
+
+metaGpercent<- ggplot(data = world) + geom_sf(lwd = 0) +theme_bw() + geom_point(data = metaGmapped_sums_final, aes (x= Longitude, y= Latitude, size = totals), colour="black",pch=21, fill="#008080", alpha=0.5) + labs(size = "Percent of\ntotal reads") + coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaG") + theme(
+    legend.position = c(1, 0),
+    legend.justification = c("right", "bottom"),
+    legend.box.just = "right",
+    legend.margin = margin(1, 1, 1, 1)
+    ) + theme(
+  legend.title = element_text(size = 8),
+  legend.text = element_text(size = 6)
+  )
+
+metaGpercent
+
+```
+???? metaT mapping results different? ?? 
+
+
+```{r}
+metaTmapped <- read.table("PhaeoCat_nt.merged.numreads.metaT", row.names =1, header = TRUE)
+#362,262 rows
+
+metaTmapped$rowsums <- rowSums(metaTmapped)
+
+metaTmapped<- metaTmapped[metaTmapped$rowsums > 0,]
+
+metaTmapped<- subset(metaTmapped, select =  -c(rowsums))
+
+#52430 rows with non zero counts
+
+metaTmapped$strain <- sapply(row.names(metaTmapped), function (x) paste(strsplit(x, '_')[[1]][1], strsplit(x, '_')[[1]][2], strsplit(x, '_')[[1]][3], sep= '_') )
+
+metaTmapped_sums <- as.data.frame(metaTmapped %>% group_by(strain) %>% summarize_all(funs(sum))) 
+
+row.names(metaTmapped_sums) <- metaTmapped_sums$strain
+metaTmapped_sums <- metaTmapped_sums[,-1]
+
+
+metaTmapped_sums_t <- t(metaTmapped_sums)
+
+##### need new readcounts for trimmed T
+
+Treadcounts <- c(133272798, 113813576, 123998544, 167056441, 27157994, 134728099, 123514074, 35208248,144194901, 139768361, 30100073, 121332351, 182830877, 167816494 )
+
+metaTmapped_sums_final<-as.data.frame((metaTmapped_sums_t / Treadcounts) * 100 )
+
+metaTmapped_sums_final$totals <- rowSums(metaTmapped_sums_final)
+
+latlongs<- metaT_metaDataNA %>%dplyr:: filter(Fraction.lower...µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession, Latitude, Longitude, Station)
+
+metaTmapped_sums_final$run_accession<- row.names(metaTmapped_sums_final)
+
+metaTmapped_sums_final<- merge(metaTmapped_sums_final, latlongs, by = "run_accession")
+
+metaTmapped_sums_final <- metaTmapped_sums_final[!duplicated(metaTmapped_sums_final$Station),]
+metaTmapped_sums_final$Station<- str_sub(metaTmapped_sums_final$Station, 5)
+
+long<- metaTmapped_sums_final %>%  pivot_longer(!c(run_accession, Latitude, Longitude, totals, Station), names_to = "strain", values_to = "value" )
+
+metaTcoxcomb<-ggplot(long, aes(x=factor(strain), y=value, fill = strain)) + geom_bar(stat= "identity", width=1, color = "black") + facet_wrap(~Station, nrow = 4 ) + coord_polar() + xlab("") + ylab("") + theme_void() +scale_fill_manual(values = colors) + ggtitle("metaT")
+
+metaTcoxcomb
+```
+
+
+```{r}
+stations / (metaGcoxcomb | metaTcoxcomb + plot_layout(guides = 'collect'))
+```
+
+
+
+
+
+```{r}
+
+strainlist <- unique(long$strain)
+
+metaT_pies <- ggplot(data = world) + geom_sf(lwd = 0) + geom_scatterpie(data=metaTmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r = totals/2), cols = strainlist, color=NA, alpha=.8 ) + theme_void()  + scale_fill_manual(values = colors) 
+
+metaT_pies 
+```
+
+
+```{r}
+metaT_pies_zoom<- ggplot(data = world) + geom_sf(lwd = 0) + geom_scatterpie(data=metaTmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r=2), cols = strainlist, color=NA, alpha=.8 ) + theme_bw()  + scale_fill_manual(values = colors) +
+    coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaT")  + theme(
+  legend.title = element_text(size = 8),
+  legend.text = element_text(size = 6)
+  ) +  labs(fill = "Reference" ) 
+
+legend<- get_legend(metaT_pies_zoom)
+
+metaT_pies_zoom <- metaT_pies_zoom + theme(legend.position = "none")
+```
+
+
+
+Percent of reads  .... mapping to all references 
+```{r, warinings=FALSE}
+#plot percent of all reads
+
+metatT_percent<- ggplot(data = world) + geom_sf(lwd = 0) +theme_bw() + geom_point(data = metaTmapped_sums_final, aes (x= Longitude, y= Latitude, size = totals), colour="black",pch=21, fill="#E69F00", alpha=0.5) + coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaT") + labs(size = "Percent of\ntotal reads" ) + theme(
+    legend.position = c(1, 0),
+    legend.justification = c("right", "bottom"),
+    legend.box.just = "right",
+    legend.margin = margin(1, 1, 1, 1)
+    ) + theme(
+  legend.title = element_text(size = 8),
+  legend.text = element_text(size = 6)
+  )
+
+metatT_percent
+```
+```{r}
+(metaGpercent |  metaGpies_zoom) / (metatT_percent | (metaT_pies_zoom + plot_layout(guides = 'collect')))
+```
+```{r}
+arranged <- ggarrange(metaGpercent,metaGpies_zoom,metatT_percent,metaT_pies_zoom)
+ggarrange(arranged, legend)
+```
+```{r}
+arranged
+```
+
+
+
+
+% Ortho groups   -   on map 
+
+
+
+metaT
+```{r}
+metaTmapped <- read.table("PhaeoCat_nt.merged.numreads.metaT", row.names =1, header = TRUE)
+#362,262 rows
+
+metaTmapped$rowsums <- rowSums(metaTmapped)
+
+metaTmapped<- metaTmapped[metaTmapped$rowsums > 0,]
+
+metaTmapped<- subset(metaTmapped, select =  -c(rowsums))
+
+#52430 rows with non zero counts
+
+metaTmapped$strain <- sapply(row.names(metaTmapped), function (x) paste(strsplit(x, '_')[[1]][1], strsplit(x, '_')[[1]][2], strsplit(x, '_')[[1]][3], sep= '_') )
+
+
+##split data frame by strain
+
+
+
+##remove strain from  of gene name 
+
+
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+gene_sets4pfam(2)
+
+
+
+##rbind all the data 
+
+
+## summarize by orthogroup category 
+
+
+
+## plot on map 
+
+
+
+
+metaTmapped_sums <- as.data.frame(metaTmapped %>% group_by(strain) %>% summarize_all(funs(sum))) 
+
+row.names(metaTmapped_sums) <- metaTmapped_sums$strain
+metaTmapped_sums <- metaTmapped_sums[,-1]
+
+
+metaTmapped_sums_t <- t(metaTmapped_sums)
+
+##### need new readcounts for trimmed T
+
+Treadcounts <- c(133272798, 113813576, 123998544, 167056441, 27157994, 134728099, 123514074, 35208248,144194901, 139768361, 30100073, 121332351, 182830877, 167816494 )
+
+metaTmapped_sums_final<-as.data.frame((metaTmapped_sums_t / Treadcounts) * 100 )
+
+metaTmapped_sums_final$totals <- rowSums(metaTmapped_sums_final)
+
+latlongs<- metaT_metaDataNA %>%dplyr:: filter(Fraction.lower...µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession, Latitude, Longitude, Station)
+
+metaTmapped_sums_final$run_accession<- row.names(metaTmapped_sums_final)
+
+metaTmapped_sums_final<- merge(metaTmapped_sums_final, latlongs, by = "run_accession")
+
+metaTmapped_sums_final <- metaTmapped_sums_final[!duplicated(metaTmapped_sums_final$Station),]
+metaTmapped_sums_final$Station<- str_sub(metaTmapped_sums_final$Station, 5)
+```
