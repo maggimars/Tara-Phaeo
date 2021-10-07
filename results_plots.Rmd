@@ -9,19 +9,13 @@ output: html_document
 knitr::opts_chunk$set(cache=TRUE, fig.path='figures/', fig.width=8, fig.height=5 )
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ```{r , message  = FALSE}
-
+library(tidyverse)
 library(ggplot2)
 library(tidyr)
 library("dplyr")
 library("gridExtra")
-library(CoDaSeq)
 
 library(viridis)
 library(UpSetR)
@@ -34,11 +28,70 @@ library(stringr)
 library(scatterpie)
 library(ggpubr)
 library(stringi)
-
-library(Vennerable)
+library(wesanderson)
+library("reshape2")
+#library(Vennerable)
 setwd("~/desktop/phaeo-tara")
 
 `%ni%` = Negate(`%in%`)
+
+colors <- c("#0181BB", "#77DAD5", "#85bfd5", "#fac92c" , "#E4E4Af", "#ef3c23", "#ed8e83", "#215F38", "#cfe5cc", "#AB3B84") 
+```
+
+BUSCO plot
+```{r}
+busco<- read.csv("phaeo_busco_results.csv", header= TRUE, row = 1)
+
+sumcols <- colSums(busco)
+for(i in 1:ncol(busco)) {
+  busco[[i]]<- (busco[[i]]/sumcols[[i]])*100
+}
+
+buscot <- as.data.frame(t(busco))
+buscot$ID = row.names(buscot)
+
+buscot<- buscot[,rev(names(buscot))]
+
+buscom <- melt(buscot, id.vars = "ID")
+
+buscom <- buscom %>% filter(ID != "P_cordata_rcc1383")
+
+pal <- wes_palette(name = "Zissou1", n=5, type = "discrete")
+wcolors <- (c(pal[1], pal[2], pal[4], pal[5]))
+
+xorder = rev(c("P_antarctica_jgi", "P_antarctica_caron", "P_antarctica_ccmp1374", "P_globosa_jgi", "P_globosa_ccmp1528", "P_sp_ccmp2710" ,  "P_cordata_ccmp3104", "P_rex_ccmp2000" , "P_jahnii_ccmp2496"))  
+
+buscoplot<- ggplot(buscom, aes(x=ID, y=value, fill=variable)) + 
+  geom_bar(stat="identity") +
+  xlab("") +
+  ylab("") +
+  theme_bw()+
+  scale_x_discrete(limits = xorder)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme(legend.title=element_blank()) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values=wcolors, breaks=c("CompleteSingle","CompleteDup","Fragmented", "Missing"), labels=c("CompleteSingleCopy","CompleteDuplicated","Fragmented", "Missing")) +
+  coord_flip() + 
+  theme(text = element_text(size=20)) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1)) +
+  theme(legend.position="bottom") + theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank())
+
+
+buscoplot
+```
+
+```{r}
+#ggsave("busco_plot.pdf", width = 11)
+```
+
+ANI plot:
+
+```{r}
+fastani <- read.csv("fastani_phaeoresults.tsv", sep = "\t")
+
+ggplot(data = fastani, aes(x=var1, y=var2, fill=percent)) + 
+  geom_tile() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
 ```
 
 ```{r}
@@ -82,7 +135,6 @@ upset(fromList(datalist), sets = rev(strain_order), order.by = "degree", keep.or
 upset(fromList(datalist), sets = rev(strain_order), order.by = "freq", keep.order = TRUE, set.metadata =  list(data = metaD, plots = list(list(type = "matrix_rows", column = "species", colors = c(antarctica = "blue", globosa = "red", cordata = "yellow", rex = " orange", jahnii = "green") ) )))
 
 ```
-
 
 
 
@@ -144,34 +196,24 @@ ortho_gene_mapping <- function(strainnum) {
   st <- names(orthogroups)[[strainnum]]
   orthos<- orthogroups %>% dplyr::select(Orthogroup, st)
   orthos<- orthos[orthos[[st]] != "",]
-  ortho_sepped <- separate(orthos, st, c(letters, LETTERS, 1:100), sep = ",", fill = "right")
+  ortho_sepped <- separate(orthos, st, c(letters, LETTERS, 1:200), sep = ",", fill = "right")
   long_ortho_sepped <- pivot_longer(ortho_sepped, cols = -c(Orthogroup))
   long_ortho<- long_ortho_sepped[!is.na(long_ortho_sepped$value),c(1,3)]
   return(long_ortho)
 }
-ortho_gene_mapping(5)
-
-
 ```
 
-get jgi antarctica Kegg annotations: 
-
-```{r}
-ant_kegg <- read.csv("prots/P_antarctica_jgi_kegg.csv",header = TRUE) %>% filter(ko!="")
-
-#9,258 annotations
-```
 
 % of genes in orthogroups annotated
 ```{r}
 
 ortho_sets <- function(strainnum) {
   st <- names(orthogroups)[[strainnum]]
-  sharedWcore <- row.names(orthos_noRCC[orthos_noRCC[[st]]==1 & orthos_noRCC[["summed"]]>=2,]) 
+  sharedWcore <- row.names(orthos_noRCC[orthos_noRCC[[st]]==1 & orthos_noRCC[["sums"]]>=2,]) 
   
-  unique <-  row.names(orthos_noRCC[orthos_noRCC[[st]]==1 & orthos_noRCC[["summed"]]==1,])
+  unique <-  row.names(orthos_noRCC[orthos_noRCC[[st]]==1 & orthos_noRCC[["sums"]]==1,])
   
-  shared <- sharedWcore[sharedWcore %ni% orthos_core]
+  shared <- sharedWcore[sharedWcore %ni% row.names(orthos_core)]
   
   annotSetList <- list("shared" = shared, "unique" = unique)
   
@@ -182,7 +224,7 @@ gene_sets <- function(strainnum){
   ortho_sets<- ortho_sets(strainnum)
   long_sepped<- ortho_gene_mapping(strainnum)
   
-  genes_in_core <-long_sepped[long_sepped$Orthogroup %in% orthos_core ,]
+  genes_in_core <-long_sepped[long_sepped$Orthogroup %in% row.names(orthos_core) ,]
   names(genes_in_core) <- c("Orthogroup", "gene")
 
   genes_in_shared <- long_sepped[long_sepped$Orthogroup %in% ortho_sets[["shared"]],]
@@ -254,7 +296,10 @@ annotated_orthogroup_plot <- function(strainnum) {
   return(plot)
 }
 
+```
 
+
+```{r}
 caron_oplot <- annotated_orthogroup_plot(2)
 mmetspAnt_oplot <- annotated_orthogroup_plot(3)
 jgiant_oplot<- annotated_orthogroup_plot(4)
@@ -325,7 +370,6 @@ ggarrange(caron_kplot, mmetspAnt_kplot, jgiant_kplot, globosa_kplot, jgiglob_kpl
 
 ```
 
-
 pathway map for K's in orthogroups 
 & for Ks in core
 maybe use pathviewer instead? ... never got the full metabolism plot to work before 
@@ -337,478 +381,905 @@ maybe use pathviewer instead? ... never got the full metabolism plot to work bef
 # write.csv(data.frame(foripath), "pcordata_ipath.csv", quote =FALSE, row.names = FALSE)
 ```
 
-Import Pfam annotation results from dammit and fix pfam annotation formatting to match that used in the pfam2go mapping file:
-```{r,  warning= FALSE, message = FALSE}
-pfamannot<- read.csv("data/P_cordata_ccmp3104_pfam.csv", header = TRUE)
-pfamannot$Dbxref <- stri_sub(pfamannot$Dbxref , from = 2, to = -2)
-pfamannot$Pfam <- gsub("\\..*","", pfamannot$Dbxref)
-pfamannot<- pfamannot[,-1]
 
-```
-**13,548 transcripts have good (score<1e-05) pfam annotations**
-
-Import and format trinity ID to dammit transcript ID mapping file:
-
-
-
+Orthogroups renamed: 
 
 ```{r}
-pc_orthos <- ortho_gene_mapping(5) %>% separate(value, c("gene"), sep = "\\.")
+orthogroups_renamed <- read.csv("Results_Jan20/Orthogroups.tsv",  sep = "\t")
 
-##everything else is the same after removing those characters ....
-
-Pc_orthosets <- ortho_sets(5)
-
-
-gene_sets4pfam <- function(strainnum){
-  ortho_sets<- ortho_sets(strainnum)
-  long_sepped<- ortho_gene_mapping(strainnum)%>% separate(value, c("gene"), sep = "\\.")
-  
-  genes_in_core <-long_sepped[long_sepped$Orthogroup %in% orthos_core ,]
-  names(genes_in_core) <- c("Orthogroup", "gene")
-
-  genes_in_shared <- long_sepped[long_sepped$Orthogroup %in% ortho_sets[["shared"]],]
-  names(genes_in_shared) <- c("Orthogroup", "gene")
-  
-  genes_unique <- long_sepped[long_sepped$Orthogroup %in% ortho_sets[["unique"]],]
-  names(genes_unique) <- c("Orthogroup", "gene")
-  
-  geneset_framelist <- list("core" = genes_in_core, "shared" = genes_in_shared, "unique" = genes_unique)
-  return(geneset_framelist)   
-}
-
-
-pfam_sets <- function(strainnum, pfam_annots) {
+ortho_gene_mapping <- function(strainnum) {
   st <- names(orthogroups)[[strainnum]]
-  gene_lists<- gene_sets4pfam(strainnum)
-  #start here 
-  pfam_incore <- merge(pfam_annots, gene_lists[["core"]], by = "gene")
-  pfam_incore$set <- "core"
-  incore<- dim(pfam_incore)[1]
-  percent_incore<- dim(pfam_incore)[1] / orthT[c(st), c("Core")]
-  
-  pfam_inshared <-  merge(pfam_annots, gene_lists[["shared"]], by = "gene")
-  shared<-  dim(pfam_inshared)[1]
-  shared_percent<- dim(pfam_inshared)[1] / orthT[c(st), c("in.shared.ortho")] 
-  pfam_inshared$set <- "shared"
-  
-  unique<- merge(pfam_annots, gene_lists[["unique"]], by = "gene")
-  unique$set <- "unique"
-  uniques<- dim(unique)[1] 
-  unique_percent<- dim(unique)[1] / orthT[c(st), c("Number.of.genes.in.species.specific.orthogroups")] 
-  
-  all_orthos <- c(gene_lists[["unique"]]$gene, gene_lists[["shared"]]$gene, gene_lists[["core"]]$gene)
-
-  unassigned_percent <- dim(pfam_annots %>% filter( gene %ni% all_orthos))[1] / orthT[c(st), c("Number.of.unassigned.genes")] 
-  unassigneds<- dim((pfam_annots) %>% filter( gene %ni% all_orthos))[1]
-  unassigned<-pfam_annots %>% filter( gene %ni% all_orthos)
-  unassigned$Orthogroup <- "none"
-  unassigned$set <- "unassigned"
-
-  all<- rbind(pfam_incore,pfam_inshared, unique, unassigned)
-  
-  frame4percentplot <- data.frame(c("core", "shared", "unique", "unassigned"),c(percent_incore, shared_percent, unique_percent, unassigned_percent), c(1-percent_incore, 1-shared_percent, 1-unique_percent, 1-unassigned_percent) )
-names(frame4percentplot) <-c("type", "annotated", "unannotated")
-
-  longpercentframe<- pivot_longer(frame4percentplot,cols = !("type") )
-  
-  label_vals=c( orthT[c(st), c("Core")],"", orthT[c(st), c("in.shared.ortho")], "", orthT[c(st), c("Number.of.genes.in.species.specific.orthogroups")] ,"", orthT[c(st), c("Number.of.unassigned.genes")], "")
-  
-  pfam_set_list <- list("all" = all, "percentplot"=  longpercentframe, "labels"= label_vals)
-  return(pfam_set_list)
+  orthos<- orthogroups_renamed %>% dplyr::select(Orthogroup, st)
+  orthos<- orthos[orthos[[st]] != "",]
+  ortho_sepped <- separate(orthos, st, c(letters, LETTERS, 1:100), sep = ",", fill = "right")
+  long_ortho_sepped <- pivot_longer(ortho_sepped, cols = -c(Orthogroup))
+  long_ortho<- long_ortho_sepped[!is.na(long_ortho_sepped$value),c(1,3)]
+  return(long_ortho)
 }
 
-
-```
-
-```{r, fig.width =4}
-pfam_orthogroup_plot <- function(strainnum, pfam_annots) {
-  strain <- names(orthogroups)[strainnum]
-  #pfam_result <- read.csv(paste0("prots/", strain, "_kegg.csv"), header = TRUE) %>% filter(ko!="")
-  pfamlists<-pfam_sets(strainnum, pfam_annots)
-  plot_title <- strain
-  plot <- ggplot(pfamlists$percentplot, aes(x=type, y=value, fill = name)) + geom_bar(stat = "identity") + theme_classic()+ ggtitle(plot_title) +xlab("") +ylab("Proportion of genes") + scale_fill_manual(values = c("#085782", "#A3BAC7")) + labs(fill = "Pfam") +scale_y_continuous(expand = c(0, 0)) + geom_text(aes(y= 0), label= pfamlists$labels, vjust = -1) + theme(plot.title = element_text(size = 9, face = "bold")) + theme(axis.text.x = element_text(angle = 45,  hjust = 1))
-  return(plot)
-}
-
-
-cordata_oplot<- pfam_orthogroup_plot(5, pfamannots)
-
-cordata_oplot
-#ggarrange(antarctica_oplot, cordata_oplot, globosa_oplot,rex_oplot, sp_oplot, common.legend = TRUE)
-
-```
-
-
-```{r, fig.width = 4}
-
-pfam_plot <- function(strainnum) {
-  strain <- names(orthogroups)[strainnum]
-  #import and format pfam annotation results
-  pfam_res<-  read.csv(paste0("prots/", strain, "_pfam.csv"), header = TRUE)
-  pfam_res$Dbxref <- stri_sub(pfam_res$Dbxref , from = 2, to = -2)
-  pfam_res$Pfam <- gsub("\\..*","", pfam_res$Dbxref)
-  pfam_res<- pfam_res[,-1]
-  #import and format gene name mapping file (from dammit)
-  transcript2dammit <- read.csv(paste0("data/", strain, ".fasta.dammit/", strain, ".fasta.dammit.namemap.csv", header = TRUE)) %>% separate(original, c("gene"), sep = " ") 
-  names(transcript2dammit) <- c("gene", "seqid")
-
-
-pfamannots <- merge(pfam_res, transcript2dammit, by = "seqid")
-  
-
-  kegg_list <- kegg_sets(strainnum, kegg_annots)
-  setframe <- kegg_list$all %>%  dplyr::count(set)
-  setframe<-data.frame(setframe)
-  target<- c("core", "shared", "unique", "unassigned")
-  setframe<-setframe[match(target, setframe$set),]
-  setframe$percent <- setframe$n/sum(setframe$n)
-  setframe$y_label <- rev(cumsum(rev(setframe$percent))) - 0.5 * setframe$percent
-  setframe$set <- factor(setframe$set, levels = c("core", "shared", "unique", "unassigned"))
-  
-  plot_title <- names(orthogroups)[strainnum]
-  sub_title <-  paste(dim(pfam_res)[1], " annotated proteins")
-    
-  plot <-  ggplot(setframe, aes(x=1, y=percent, fill = set)) + geom_bar(stat = "identity") + theme_classic()+ ylab("") + scale_fill_manual(values = colors) + labs(fill = "") +scale_y_continuous(expand = c(0, 0)) + geom_text(aes(y= y_label), label= setframe$n, vjust = 0) +theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())  +  labs(title = plot_title,
-              subtitle = c(sub_title)) + theme(plot.title = element_text(size = 9, face = "bold"), plot.subtitle = element_text(size = 7.5 ))
-  
-  return(plot)
-}
-
-
-rex_kplot <-kegg_plot(10)
-globosa_kplot<- kegg_plot(7)
-cordata_kplot<- kegg_plot(5)
-antarctica_kplot<- kegg_plot(4)
-sp_kplot<- kegg_plot(11)
-
-
-ggarrange(antarctica_kplot, cordata_kplot, globosa_kplot,rex_kplot, sp_kplot, common.legend = TRUE, nrow =1)
-
 ```
 
 
 
+# Results from Salmon mapping Tara Data to *Phaeocystis* References
 
+# Metadata
 
-Import and format pfam2go mapping file:
-```{r, message=FALSE, warnings = FALSE}
-pfam2go <- read.csv("data/pfam2go4R.txt", header = FALSE)
-pfam2go1 <- pfam2go %>%
-  separate(V1, c('V1_1', 'V1_2'), sep = '>') %>%
-  separate(V1_1, c("Pfam", "name"), sep = " ") %>%
-  separate(V1_2, c("GO_desc", "GO"), sep = ";")
-pfam2go1$GO <-stri_sub(pfam2go1$GO, from = 2)
+### MetaT sample lists for mapping
 
-```
-
-Create transcript to GO reference: 
-```{r,  warning= FALSE, message = FALSE}
-pfam1 <- merge(pfamannot, pfam2go1, by = "Pfam")
-pfam2<- merge(pfam1, trinity2dammit1, by ="seqid" )
-
-
-pfam3 <- merge(pfam2, sigDEgenes, by = "trinity")
-pfamUP <- pfam3[pfam3$log2FoldChange >0 & pfam3$padj <0.05,]
-pfam4<-merge(pfamannot, trinity2dammit1, by = "seqid")
-pfam5<-merge(pfam4, sigDEgenes, by = "trinity")
-length(unique(pfam1$seqid))
-```
-*7119 annotated transcripts also have a GO term assigned.*
-
-
-
-
-
-MetaT and MetaG metadata -
 ```{r}
 metaT_metaData <- read.csv("PRJEB6609_metaT_wenv_PE.csv")
-
-NAsta<-c("TARA_141", "TARA_142",  "TARA_146", "TARA_145", "TARA_148", "TARA_149", "TARA_150", "TARA_151" ,"TARA_152", "TARA_004")
-
-metaT_metaDataSts <-  metaT_metaData %>% dplyr::filter(Station %in% NAsta)
-
-dim(metaT_metaDataSts)
-
+dim(metaT_metaData)
 ```
+
+Get list of all **large** size-fraction **surface** metaT samples:
 
 ```{r}
-metaT_metaDataNA <- metaT_metaData %>%dplyr:: filter(OS.region == "[NAO] North Atlantic Ocean (MRGID:1912)")
+metaT_all_large <- metaT_metaData %>%dplyr::filter(Fraction.lower...µm. == 5 & Fraction.upper...µm. == "20" &Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession)
 
-dim(metaT_metaDataNA)
+#write.table(metaT_all_large, "PRJEB6609_metaT_ERR_all_regions_5to20surf.list", quote = FALSE, row.names=FALSE )
+unique(( metaT_metaData %>%dplyr::filter(Fraction.lower...µm. == 5 & Fraction.upper...µm. == "20" & Env.feature  =="[SRF] surface water layer (ENVO:00010504)"))$Device)
 ```
 
-map tutorial: https://www.r-spatial.org/r/2018/10/25/ggplot2-sf.html
 
+Get list of all **small** size-fraction **surface** samples:
 ```{r}
-library(ggspatial)
-library("rnaturalearth")
-library("rnaturalearthdata")
+metaT_all_small <- metaT_metaData %>%dplyr::filter(Fraction.lower...µm. == 0.8 & Fraction.upper...µm. == "5" & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession)
 
-world <- ne_countries(scale = "medium", returnclass = "sf")
-
-ggplot(data = world) + geom_sf() +theme_test() + geom_point(data = metaT_metaDataNA, aes (x= Longitude, y= Latitude  ))
+#write.table(metaT_all_small, "PRJEB6609_metaT_ERR_all_regions_08to5surf.list", quote = FALSE, row.names=FALSE )
+unique(( metaT_metaData %>%dplyr::filter(Fraction.lower...µm. == 0.8 & Fraction.upper...µm. == "5" & Env.feature  =="[SRF] surface water layer (ENVO:00010504)"))$Device)
 ```
 
-get list of samples for mapping - Start with 5-20 µm fractions in the Surface
-
-```{r}
-metaT_metaDataNA_surf5 <- metaT_metaDataNA %>%dplyr:: filter(Fraction.lower...µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession)
-
-write.table(metaT_metaDataNA_surf5, "PRJEB6609_metaT_ERR_NA5to20surf.list", quote = FALSE, row.names=FALSE )
-```
-
-
-
-MetaG 
+### MetaG lists of samples for mapping
 
 ```{r}
 metaG_metaData <- read.csv("PRJEB4352_metaG_wenv_PE.csv")
+
+metaG_all_large <- metaG_metaData %>%dplyr::filter(Fraction.lower..µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)" & Fraction.upper..µm. == "20" ) %>% dplyr::select(run_accession)
+
+#write.table(metaG_all_large, "PRJEB4352_metaG_ERR_all_regions_5to20surf.list", quote = FALSE, row.names=FALSE )
+
+unique((metaG_metaData %>%dplyr::filter(Fraction.lower..µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)" & Fraction.upper..µm. == "20" ))$Device)
+
 ```
 
 
 ```{r}
-metaG_metaDataNA <- metaG_metaData %>%dplyr:: filter(OS.region == "[NAO] North Atlantic Ocean (MRGID:1912)")
+metaG_all_small = metaG_metaData %>%dplyr::filter(Fraction.lower..µm. == 0.8 & Fraction.upper..µm. =="5" & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession)
 
-dim(metaG_metaDataNA)
+#write.table(metaG_all_small, "PRJEB4352_metaG_ERR_all_regions_08to5surf.list", quote = FALSE, row.names=FALSE )
+
+unique((metaG_metaData %>%dplyr::filter(Fraction.lower..µm. == 0.8 & Fraction.upper..µm. =="5" & Env.feature  =="[SRF] surface water layer (ENVO:00010504)"))$Device)
+
 ```
+
+## Map of stations (labelled with station numbers)
 
 ```{r}
 
-meta4plot <- metaG_metaDataNA %>% dplyr::select(Latitude, Longitude, Station)
+meta4map <- metaT_metaData %>% dplyr::select(Latitude, Longitude, Station) 
+meta4map <- meta4map[!duplicated(meta4map$Station),]
+meta4map$Station <- str_sub(meta4map$Station, 6)
 
-meta4plot <- meta4plot[!duplicated(meta4plot$Station),]
-meta4plot$Station<- str_sub(meta4plot$Station, 6)
-
-ggplot(data = world) + geom_sf() +theme_test() + geom_point(data = meta4plot, aes (x= Longitude, y= Latitude  )) 
-```
-
-```{r}
-
-stations<-ggplot(data = world) + geom_sf(lwd = 0) +theme_void() +geom_point(data = meta4plot, aes (x= Longitude, y= Latitude )) + geom_text_repel(data =meta4plot, aes(x= Longitude, y= Latitude, label = Station), size = 3)  +
-    coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE)
+stations<-ggplot(data = world) + geom_sf(lwd = 0) +theme_void() +geom_point(data = meta4map, aes (x= Longitude, y= Latitude )) + geom_text_repel(data =meta4map, aes(x= Longitude, y= Latitude, label = Station), size = 3)
 
 stations
 ```
 
-```{r}
-metaG_metaDataNA_surf5 <- metaG_metaDataNA %>%dplyr:: filter(Fraction.lower..µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession)
 
-write.table(metaG_metaDataNA_surf5, "PRJEB4352_metaG_ERR_NA5to20surf.list", quote = FALSE, row.names=FALSE )
+##Salmon Mapping results: 
+
+Import Salmon results:
+
+```{r}
+#Salmon mapping rates
+alllsmallT_percentmapping_file <- read.csv("metaT_allregions_smallfraction_mappingrates.csv")
+alllargeT_percentmapping_file <- read.csv("metaT_allregions_largefraction_mappingrates.csv")
+alllsmallG_percentmapping_file <- read.csv("metaG_allregions_smallfraction_mappingrates.csv")
+alllargeG_percentmapping_file <- read.csv("metaG_allregions_largefraction_mappingrates.csv")
+
+#Salmon quant results
+alllsmallT_mappingFrame<- read.table("metaT_all_regions_small.merged.numreads", row.names =1, header = TRUE)
+alllargeT_mappingFrame<- read.table("metaT_all_regions_large.merged.numreads", row.names =1, header = TRUE)
+alllsmallG_mappingFrame<- read.table("metaG_all_regions_small.merged.numreads.txt", row.names =1, header = TRUE)
+alllargeG_mappingFrame<- read.table("metaG_all_regions_large.merged.numreads", row.names =1, header = TRUE)
+```
+
+Salmon mapping data functions:
+```{r}
+# function for formatting salmon results:
+mapping_results <- function(mappingFrame, metaFrame, percentmapping_file, device = "all"){
+  # mappingFrame is the .numreads results file from salmon
+  # metaFrame is the metadata from Tara (station number, lat, long, etc.)
+  # percentmapping file is the % mapping that was grabbed from the salmon log
+  
+  mappingFrame$rowsums <- rowSums(mappingFrame)
+  #mappingFrame<- mappingFrame[mappingFrame$rowsums > 0,]
+  mappingFrame<- subset(mappingFrame, select =  -c(rowsums))
+  mapped_percent<- sweep(mappingFrame,2,colSums(mappingFrame),`/`) #this is for annotation plots
+  mappingFrame$strain <- sapply(row.names(mappingFrame), function (x) paste(strsplit(x, '_')[[1]][1], strsplit(x, '_')[[1]][2], strsplit(x, '_')[[1]][3], sep= '_') )
+  mappingFrame_sums <- as.data.frame(mappingFrame %>% group_by(strain) %>% summarize_all(funs(sum))) 
+  row.names(mappingFrame_sums) <- mappingFrame_sums$strain
+  mappingFrame_sums <- mappingFrame_sums[,-1]
+  mappingFrame_sums_t <- as.data.frame(t(mappingFrame_sums))
+  percent_mapping <- percentmapping_file %>%  separate(rate, into= c("first", "rate"), sep = "=") %>% dplyr::select(run_accession, rate)
+  percent_mapping$rate<- trimws(percent_mapping$rate, which = "left")
+  percent_mapping$rate <- str_sub(percent_mapping$rate, 1, -2)
+  percent_mapping$rate <- as.numeric(percent_mapping$rate)
+  mappingFrame_sums_t$run_accession <- row.names(mappingFrame_sums_t)
+  mappingFrame_sums_final <- merge(percent_mapping, mappingFrame_sums_t, by = "run_accession")
+  latlongs<- metaFrame%>% dplyr::select(run_accession, Latitude, Longitude, Station, Device)
+  mappingFrame_sums_final<- merge(mappingFrame_sums_final, latlongs, by = "run_accession")
+  mappingFrame_sums_final$Station<- str_sub(mappingFrame_sums_final$Station, 6)
+  if (device == "peri") {
+     mappingFrame_sums_finale <- mappingFrame_sums_final %>% filter(Device == "High Volume Peristaltic Pump")
+  } else mappingFrame_sums_finale <- mappingFrame_sums_final
+  pivot_long<- mappingFrame_sums_finale %>%  pivot_longer(!c(run_accession, Latitude, Longitude, Station, rate, Device), names_to = "strain", values_to = "value" )
+  return(list(sums_final = mappingFrame_sums_finale, mapped = percent_mapping, long = pivot_long))
+}
+
+#Function for plotting salmon quant results (% per reference on geographic map):
+world_pies <- function(resultsList, title){
+  mapped_sums_final<-resultsList$sums_final
+  
+  strainlist <- unique(resultsList$long$strain)
+  
+  plot<-ggplot(data = world) + geom_sf(lwd = 0) + theme_void() + geom_scatterpie(data=mapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r=3), cols = strainlist, color=NA, alpha=.8 ) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle(title)  + scale_fill_manual(values = colors) + coord_sf(xlim = c(-180, 100), ylim = c(-90, 90), expand = FALSE) #+ theme(legend.position = "none")
+
+    return(plot)
+}
+
+# function for plotting the % reads mapped as point size on geographic map:
+geo_percent<- function(resultsList, title, color){
+  
+  mapped_sums_final<-resultsList$sums_final
+  strainlist <- unique(resultsList$long$strain)
+  
+  geo_percent_plot<- ggplot(data = world) + geom_sf(lwd = 0) +theme_void() + geom_point(data =  mapped_sums_final, aes (x= Longitude, y= Latitude, size = rate), colour="black",pch=21, fill=color, alpha=0.5) + labs(size = "Percent of\ntotal reads") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle(title) + theme(
+    legend.position = c(1, 0),
+    legend.justification = c("right", "bottom"),
+    legend.box.just = "right",
+    legend.margin = margin(1, 1, 1, 1)
+    ) + theme(
+  legend.title = element_text(size = 8),
+  legend.text = element_text(size = 6) 
+  ) + coord_sf(xlim = c(-180, 100), ylim = c(-90, 90), expand = FALSE)
+  
+  return(geo_percent_plot)
+}
+
+```
+
+run formatting function for all sample types:
+```{r, warning=FALSE}
+alllsmallT_results <- mapping_results(alllsmallT_mappingFrame, metaT_metaData, alllsmallT_percentmapping_file)
+alllargeT_results <- mapping_results(alllargeT_mappingFrame, metaT_metaData, alllargeT_percentmapping_file)
+alllsmallG_results <- mapping_results(alllsmallG_mappingFrame, metaG_metaData, alllsmallG_percentmapping_file)
+alllargeG_results <- mapping_results(alllargeG_mappingFrame, metaG_metaData, alllargeG_percentmapping_file)
+alllsmallT_results_peri <- mapping_results(alllsmallT_mappingFrame, metaT_metaData, alllsmallT_percentmapping_file, device = "peri")
+alllargeT_results_peri <- mapping_results(alllargeT_mappingFrame, metaT_metaData, alllargeT_percentmapping_file, device = "peri")
+alllsmallG_results_peri <- mapping_results(alllsmallG_mappingFrame, metaG_metaData, alllsmallG_percentmapping_file, device = "peri")
+alllargeG_results_peri <- mapping_results(alllargeG_mappingFrame, metaG_metaData, alllargeG_percentmapping_file, device = "peri")
+```
+
+# What P. antarctica genes are being mapped to in the N. Atlantic? 
+
+```{r}
+allsmallGgenes<- alllsmallG_mappingFrame
+  
+  
+allsmallGgenes$rowsums <- rowSums(allsmallGgenes)
+allsmallGgenes<- allsmallGgenes[allsmallGgenes$rowsums > 0,]
+allsmallGgenes<- subset(allsmallGgenes, select =  -c(rowsums))
+allsmallGgenes$strain <- sapply(row.names(allsmallGgenes), function (x) paste(strsplit(x, '_')[[1]][1], strsplit(x, '_')[[1]][2], strsplit(x, '_')[[1]][3], sep= '_') )
+
+
+allsmallAnt <- allsmallGgenes %>%  filter(strain %in% c("P_antarctica_caron", "P_ant_jgi", "P_antarctica_ccmp1374" ))
+
+NAsampleIDs <- metaG_metaData %>%dplyr::filter(Fraction.lower..µm. == 0.8 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)" & Fraction.upper..µm. == "5" & OS.region == "[NAO] North Atlantic Ocean (MRGID:1912)") %>% select(run_accession)
+
+allsmallAnt_NA <- allsmallAnt %>% select(as.vector(NAsampleIDs$run_accession))
+
+allsmallAnt_NA$rowsums <- rowSums(allsmallAnt_NA)
+allsmallAnt_NA<- allsmallAnt_NA[allsmallAnt_NA$rowsums > 0,]
+allsmallAnt_NA<- subset(allsmallAnt_NA, select =  -c(rowsums))
+#54,699 non-zero genes
+
+allsmallAnt_NA$geneid <- row.names(allsmallAnt_NA) 
+
+#ant name maps 
+Pant_caron_pfamnames <- read.csv("data/P_antarctica_caron.fasta.dammit/P_antarctica_caron.fasta.dammit.namemap.csv") %>% separate(col = original, into = c("geneid"), sep = " ")
+names(Pant_caron_pfamnames)[2]<- "seqid"
+Pant_ccmp_pfamnames <- read.csv("data/P_antarctica_ccmp1374.fasta.dammit/P_antarctica_ccmp1374.fasta.dammit.namemap.csv") %>% separate(col = original, into = c("geneid"), sep = " ")
+names(Pant_ccmp_pfamnames)[2]<- "seqid"
+Pant_jgi_pfamnames <- read.csv("data/P_antarctica_jgi.fasta.dammit/P_antarctica_jgi.fasta.dammit.namemap.csv")
+names(Pant_jgi_pfamnames)<- c("geneid", "seqid")
+Pant_jgi_pfamnames$seqid <- Pant_jgi_pfamnames$geneid
+ 
+
+pant_names <- rbind(Pant_caron_pfamnames, Pant_ccmp_pfamnames, Pant_jgi_pfamnames )
+
+ant_pfam <- merge(pant_names, ant_pfams)
+#43,056
+
+NA_ant_genes <- merge(ant_pfam, allsmallAnt_NA)
+#14,657
+
+## get all the annotation for non Antarctica seqs 
+others <- other_pfams %>% select(-seqid)
+#76,679 
+length(unique(others$Name))
+#4675
+
+overlap <- merge(others, NA_ant_genes, by = "Name")
+length(unique(NA_ant_genes$Name))
+
+sum(unique(NA_ant_genes$Name) %in% others$Name )
+
+#overlap between antarctica genes in NA and those in the other references? 
+
+
 ```
 
 
-test run: 
-North Atlantic - mapped to concatenated references
+
+
+run plotting function for all sample types: 
+```{r}
+(world_pies(alllsmallG_results , "metaG - 0.8-5 µm size fraction") + world_pies(alllsmallT_results , "metaT - 0.8-5 µm size fraction")) / (world_pies(alllargeG_results , "metaG - 5-20 µm size fraction") + world_pies(alllargeT_results , "metaT - 5-20 µm size fraction")) + plot_layout(guides = "collect")
+```
+
+
+
+ggsave("percentstrains_allregions.pdf", height = 14)
 
 ```{r}
-metaG_metaDataNA_surf5 <- metaG_metaDataNA %>%dplyr:: filter(Fraction.lower..µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession, Station, Device, Latitude, Longitude, Depth..nominal, Fraction.lower..µm., Fraction.upper..µm., MP.biome, BG.province)
+(world_pies(alllsmallG_results_peri , "metaG - 0.8-5 µm size fraction") + world_pies(alllsmallT_results_peri , "metaT - 0.8-5 µm size fraction")) / (world_pies(alllargeG_results_peri , "metaG - 5-20 µm size fraction") + world_pies(alllargeT_results_peri , "metaT - 5-20 µm size fraction")) + plot_layout(guides = "collect")
+```
 
-row.names(metaG_metaDataNA_surf5) <- metaG_metaDataNA_surf5$run_accession
 
-readcounts <- c(204139639, 204384011, 173976202, 181163832, 171053618, 159974552, 179140057, 139442782, 167267129, 191132398, 182785130)
+
+run mapping percent function for all data-types: 
+```{r}
+metaGcolor <- "#008080"
+metaTcolor <- "#E69F00"
+smallG_geo_percent <- geo_percent(alllsmallG_results, "metaG - 0.8-5 µm size fraction", metaGcolor)
+largeG_geo_percent <- geo_percent(alllargeG_results, "metaG - 5-20 µm size fraction", metaGcolor)
+smallT_geo_percent <- geo_percent(alllsmallT_results, "metaT - 0.8-5 µm size fraction", metaTcolor)
+largeT_geo_percent <- geo_percent(alllargeT_results, "metaT - 5-20 µm size fraction", metaTcolor)
+```
+
+show plots:
+```{r}
+(smallG_geo_percent / largeG_geo_percent / smallT_geo_percent / largeT_geo_percent)
+```
+
+ggsave("percentmapping_allregions.pdf", height = 14)
+
+
+
+# Single-Copy Core Gene Salmon Mapping
+import results
+```{r}
+#import metaG
+scgG_mappingFrame <- read.table("metaG_SCG_seqs.merged.numreads", row.names =1, header = TRUE)
+#import metaT
+scgT_mappingFrame <- read.table("metaT_SCG_seqs.merged.numreads", row.names =1, header = TRUE)
+```
+
+functions 
+```{r}
+SCGmapping_results <- function(mappingFrame, metaFrame){
+  # mappingFrame is the .numreads results file from salmon
+  # metaFrame is the metadata from Tara (station number, lat, long, etc.)
+  # percentmapping file is the % mapping that was grabbed from the salmon log
+  
+  mappingFrame$rowsums <- rowSums(mappingFrame)
+  mappingFrame<- mappingFrame[mappingFrame$rowsums > 0,]
+  mappingFrame<- subset(mappingFrame, select =  -c(rowsums))
+  mappingFrame$strain <- sapply(row.names(mappingFrame), function (x) paste(strsplit(x, '_')[[1]][1], strsplit(x, '_')[[1]][2], strsplit(x, '_')[[1]][3], sep= '_') )
+  mappingFrame_sums <- as.data.frame(mappingFrame %>% group_by(strain) %>% summarize_all(funs(sum))) 
+  row.names(mappingFrame_sums) <- mappingFrame_sums$strain
+  mappingFrame_sums <- mappingFrame_sums[,-1]
+  mappingFrame_sums_t <- as.data.frame(t(mappingFrame_sums))
+  mappingFrame_sums_t$run_accession <- row.names(mappingFrame_sums_t)
+  mappingFrame_sums_final <- mappingFrame_sums_t
+  latlongs<- metaFrame%>% dplyr::select(run_accession, Latitude, Longitude, Station, Device)
+  mappingFrame_sums_final <- merge(mappingFrame_sums_final, metaFrame, by = "run_accession" )
+  
+  return(mappingFrame_sums_final)
+}
+ 
+
+world_pies <- function(mapped_sums_final, title){
+  strainlist1 <- names(scgT_results)[2:10]
+  strainlist <- c(strainlist1[3], strainlist1[1], strainlist1[2], strainlist1[4], strainlist1[5], strainlist1[6], strainlist1[7], strainlist1[8], strainlist1[9] )
+  
+  plot<-ggplot(data = world) + geom_sf(lwd = 0) + theme_void() + geom_scatterpie(data=mapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r=3), cols = strainlist, color=NA, alpha=.8 ) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle(title) +  scale_fill_manual(values = colors[-5]) + coord_sf(xlim = c(-180, 100), ylim = c(-90, 90), expand = FALSE) #+ theme(legend.position = "none")
+     theme(legend.position = "none") # + theme(plot.title = element_text(size = 5)) 
+
+    return(plot)
+}
+```
+
+Format
+```{r}
+scgG_results <- SCGmapping_results(scgG_mappingFrame, metaG_metaData)
+scgT_results <- SCGmapping_results(scgT_mappingFrame, metaT_metaData)
+```
+
+Plot
+```{r}
+(world_pies((scgG_results %>% filter(run_accession %in% metaG_all_small$run_accession)) , "metaG SCG - 0.8-5 µm size fraction") + world_pies((scgG_results %>% filter(run_accession %in% metaG_all_large$run_accession)) , "metaG SCG - 5-20 µm size fraction")) / (world_pies((scgT_results %>% filter(run_accession %in% metaT_all_small$run_accession)) , "metaT SCG- 0.8-5 µm size fraction") +world_pies((scgT_results %>% filter(run_accession %in% metaT_all_large$run_accession))  , "metaT SCG- 5-20 µm size fraction")) + plot_layout(guides = "collect")
+```
+
+
+ggsave("percentstrains_SCG_allregions.pdf", height = 14)
+
+## SCG mapping rate percents on geographic maps:
+
+```{r}
+metaG_scg_rates <- read.csv("metaG_scg_mappingrates.csv", header = FALSE)
+names(metaG_scg_rates) <- c("run_accession", "rate")
+
+metaT_scg_rates <- read.csv("metaT_scg_mappingrates.csv", header = TRUE)
+
+metaG_scg_rates_small <- merge(metaG_scg_rates, metaG_metaData, by = "run_accession") %>% filter(run_accession %in% metaG_all_small$run_accession) %>%  filter(Device == "High Volume Peristaltic Pump")
+
+metaG_scg_rates_large <- merge(metaG_scg_rates, metaG_metaData, by = "run_accession") %>% filter(run_accession %in% metaG_all_large$run_accession) %>% filter(Device == "High Volume Peristaltic Pump") 
+
+metaT_scg_rates_small <- merge(metaT_scg_rates, metaT_metaData, by = "run_accession") %>% filter(run_accession %in% metaT_all_small$run_accession) %>% filter(Device == "High Volume Peristaltic Pump")
+  
+metaT_scg_rates_large <- merge(metaT_scg_rates, metaT_metaData, by = "run_accession") %>% filter(run_accession %in% metaT_all_large$run_accession) %>%  filter(Device == "High Volume Peristaltic Pump")
+
+geo_percent<- function(frame, title, color){
+  geo_percent_plot<- ggplot(data = world) + geom_sf(lwd = 0) +theme_void() + geom_point(data =  frame, aes (x= Longitude, y= Latitude, size = rate), colour="black",pch=21, fill=color, alpha=0.5) + labs(size = "Percent of\ntotal reads") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle(title) + coord_sf(xlim = c(-180, 100), ylim = c(-90, 90), expand = FALSE)+ theme(
+    legend.position = c(1, 0),
+    legend.justification = c("right", "bottom"),
+    legend.box.just = "right",
+    legend.margin = margin(1, 1, 1, 1)
+    ) + theme(
+  legend.title = element_text(size = 8),
+  legend.text = element_text(size = 6)
+  )
+  
+  return(geo_percent_plot)
+}
+
+metaGcolor <- "#008080"
+metaTcolor <- "#E69F00"
+
+smallG_geo_percent <- geo_percent(metaG_scg_rates_small, "metaG - 0.8-5 µm size fraction", metaGcolor)
+largeG_geo_percent <- geo_percent(metaG_scg_rates_large, "metaG - 5-20 µm size fraction", metaGcolor)
+smallT_geo_percent <- geo_percent(metaT_scg_rates_small, "metaT - 0.8-5 µm size fraction", metaTcolor)
+largeT_geo_percent <- geo_percent(metaT_scg_rates_large, "metaT - 5-20 µm size fraction", metaTcolor)
+
+smallG_geo_percent / largeG_geo_percent/ smallT_geo_percent / largeT_geo_percent
+
+
+```
+
+ggsave("percentmapping_SCG_allregions.pdf", height = 14)
+
+
+
+# RSEM results 
+
+```{r}
+rsemT <- read.csv("rsem_MetaT_mapping.stats.csv", row.names = 1)
+rsemG <-  read.csv("rsem_MetaG_mapping.stats.csv", row.names =1)
+
+rsemT_notzero<- rsemT[rowSums(rsemT[])>0,] #
+rsemG_notzero<- rsemG[rowSums(rsemG[])>0,]
+
+inboth<- merge(rsemT_notzero, rsemG_notzero, by=0)
+```
+
+
+## plot scatterpies
+
+
+
+```{r}
+#function for formatting salmon results 
+
+rsem_results <- function(mappingFrame, metaFrame){
+  # mappingFrame is the .numreads results file from salmon
+  # metaFrame is the metadata from Tara (station number, lat, long, etc.)
+  # percentmapping file is the % mapping that was grabbed from the salmon log
+  
+  
+  mappingFrame$strain <- sapply(row.names(mappingFrame), function (x) paste(strsplit(x, '_')[[1]][1], strsplit(x, '_')[[1]][2], strsplit(x, '_')[[1]][3], sep= '_') )
+  mappingFrame_sums <- as.data.frame(mappingFrame %>% group_by(strain) %>% summarize_all(funs(sum))) 
+  row.names(mappingFrame_sums) <- mappingFrame_sums$strain
+  mappingFrame_sums <- mappingFrame_sums[,-1]
+  mappingFrame_sums_t <- as.data.frame(t(mappingFrame_sums))
+  mappingFrame_sums_t$run_accession <- row.names(mappingFrame_sums_t)
+  latlongs<- metaFrame%>% dplyr::select(run_accession, Latitude, Longitude, Station, Device, Fraction.lower...µm. )
+  mappingFrame_sums_final<- merge(mappingFrame_sums_t, latlongs, by = "run_accession")
+  
+  mappingFrame_sums_finale <- mappingFrame_sums_final %>% filter(Device == "High Volume Peristaltic Pump")
+  #mappingFrame_sums_final <- mappingFrame_sums_final[!duplicated(mappingFrame_sums_final$Station),]
+  return(  mappingFrame_sums_final)
+}
+
+
+
+rsemG_resultdf <- rsem_results(rsemG_notzero,metaG_metaData)
+rsemT_resultdf <- rsem_results(rsemT_notzero, metaT_metaData)
+
+world_pies <- function(mapped_sums_final, title){
+  strainlist1 <- names(scgT_results)[2:10]
+  strainlist <- c(strainlist1[3], strainlist1[1], strainlist1[2], strainlist1[4], strainlist1[5], strainlist1[6], strainlist1[7], strainlist1[8], strainlist1[9] )
+  
+  plot<-ggplot(data = world) + geom_sf(lwd = 0) + theme_void() + geom_scatterpie(data=mapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r=3), cols = strainlist, color=NA, alpha=.8 ) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle(title) +  scale_fill_manual(values = colors[-5]) + coord_sf(xlim = c(-180, 100), ylim = c(-90, 90), expand = FALSE) + 
+     theme(legend.position = "none") # + theme(plot.title = element_text(size = 5)) 
+
+    return(plot)
+}
+
+world_pies(rsemG_resultdf,"rsem - large metaG") / world_pies(rsemT_resultdf, "rsem - large metaT")
+
+
+
+```
+ggsave("rsemresults.png")
+
+
+how many genes are nonzero in both data sets (T/G)?
+
+What are functions of T only?
+
+What are functions of G only genes?
+
+*ARE GENES WITH COUNTS ONLY IN METAG primarily JGI? 
+*Are these genes in orthogroups with that include representatives from transcriptomes?
+
+
+pfam
+
+```{r}
+pant_caron_pfam <- read.csv("data/P_antarctica_caron_pfam.csv")[,-1]
+pant_ccmp1374_pfam <- read.csv("data/P_antarctica_ccmp1374_pfam.csv")[,-1]
+pglo_ccmp1528_pfam <- read.csv("data/P_globosa_ccmp1528_pfam.csv")[,-1]
+psp_ccmp2710_pfam <- read.csv("data/P_sp_ccmp2710_pfam.csv")[,-1]
+pcor_ccmp3104_pfam <-read.csv("data/P_cordata_ccmp3104_pfam.csv")[,-1]
+pja_ccmp2496_pfam<-read.csv("data/P_jahnii_ccmp2496_pfam.csv")[,-1]
+prex_ccmp2000_pfam <- read.csv("data/P_rex_ccmp2000_pfam.csv")[,-1]
+
+#jgi needs namemaps
+pant_jgi_pfam <- read.csv("data/P_antarctica_jgi_pfam.csv")[,-1]
+pant_namemap<- read.csv("data/P_antarctica_jgi.fasta.dammit/P_antarctica_jgi.fasta.dammit.namemap.csv")
+names(pant_namemap)<- c("original", "seqid")
+pant_jgi_pfam <- merge(pant_jgi_pfam, pant_namemap)
+pant_jgi_pfam <- pant_jgi_pfam[, -1]
+colnames(pant_jgi_pfam)[4] <- "seqid"
+
+
+pglo_jgi_pfam <- read.csv("data/P_globosa_jgi_pfam.csv")[,-1]
+pglo_namemap <- read.csv("data/P_globosa_jgi.fasta.dammit/P_globosa_jgi.fasta.dammit.namemap.csv")
+names(pglo_namemap)<- c("original", "seqid")
+pglo_jgi_pfam <- merge(pglo_jgi_pfam, pglo_namemap, by = "seqid")
+pglo_jgi_pfam <- pglo_jgi_pfam[, -1]
+colnames(pglo_jgi_pfam)[4] <- "seqid"
+
+
+
+all_pfams <- rbind(pant_caron_pfam, pant_ccmp1374_pfam, pglo_ccmp1528_pfam, psp_ccmp2710_pfam, pcor_ccmp3104_pfam, pja_ccmp2496_pfam, prex_ccmp2000_pfam, pant_jgi_pfam, pglo_jgi_pfam )
+
+ant_pfams <- rbind(pant_caron_pfam, pant_ccmp1374_pfam,  pant_jgi_pfam)
+
+other_pfams <- rbind( pglo_ccmp1528_pfam, psp_ccmp2710_pfam, pcor_ccmp3104_pfam, pja_ccmp2496_pfam, prex_ccmp2000_pfam, pglo_jgi_pfam )
+
+
+```
+
+
+# psbO
+```{r}
+psbO <- all_pfams %>% filter(Name == "MSP")
+
+
+#namemaps 
+
+## globosa
+ccmp1528_namemap <- read.csv("data/P_globosa_ccmp1528.fasta.dammit/P_globosa_ccmp1528.fasta.dammit.namemap.csv")
+ccmp2710_namemap <- read.csv("data/P_sp_ccmp2710.fasta.dammit/P_sp_ccmp2710.fasta.dammit.namemap.csv")
+
+#cordata
+ccmp3104_namemap <- read.csv("data/P_cordata_ccmp3104.fasta.dammit/P_cordata_ccmp3104.fasta.dammit.namemap.csv")
+
+#rex
+ccmp2000_namemap <- read.csv("data/P_rex_ccmp2000.fasta.dammit/P_rex_ccmp2000.fasta.dammit.namemap.csv")
+
+#jahni
+ccmp2496_namemap <-read.csv("data/P_jahnii_ccmp2496.fasta.dammit/P_jahnii_ccmp2496.fasta.dammit.namemap.csv")
+
+othermaps <- rbind(ccmp1528_namemap, ccmp2710_namemap, ccmp3104_namemap, ccmp2000_namemap, ccmp2496_namemap )
+names(othermaps ) <- c("geneid", "seqid")
+
+pglo_jgi_namemap <-read.csv("data/P_globosa_jgi.fasta.dammit/P_globosa_jgi.fasta.dammit.namemap.csv")
+names(pglo_jgi_namemap ) <- c("geneid", "seqid")
+
+pglo_jgi_namemap$seqid <- pglo_jgi_namemap$geneid
+
+allnames <- rbind(pant_names, othermaps, pglo_jgi_namemap)
+
+psboWnames <- merge(allnames, psbO)
+#write.csv(psboWnames, "psboWnames.csv")
+
+psboWnames <- read.csv("psboWnames.csv")
+
+psboSmallT <- subset(alllsmallT_mappingFrame, rownames(alllsmallT_mappingFrame) %in% psboWnames$geneid)
+psboLargeT <- subset(alllargeT_mappingFrame, rownames(alllargeT_mappingFrame) %in% psboWnames$geneid)
+psboSmallG <- subset(alllsmallG_mappingFrame, rownames(alllsmallG_mappingFrame) %in% psboWnames$geneid)
+psboLargeG <- subset(alllargeG_mappingFrame, rownames(alllargeG_mappingFrame) %in% psboWnames$geneid)
+ 
+psbosmallT_results <- mapping_results(psboSmallT, metaT_metaData, alllsmallT_percentmapping_file)
+psbolargeT_results <- mapping_results(psboLargeT, metaT_metaData, alllargeT_percentmapping_file)
+psbosmallG_results <- mapping_results(psboSmallG, metaG_metaData, alllsmallG_percentmapping_file)
+psbolargeG_results <- mapping_results(psboLargeG, metaG_metaData, alllargeG_percentmapping_file)
+
+colors <- c("#0181BB", "#77DAD5", "#85bfd5", "#fac92c" , "#ed8e83", "#215F38", "#cfe5cc", "#AB3B84") 
+
+(world_pies(psbosmallG_results , "psbo metaG - 0.8-5 µm size fraction") / world_pies(psbosmallT_results , "psbo metaT - 0.8-5 µm size fraction"))+ plot_layout(guides = "collect")
+
+
+
+  (world_pies(psbolargeG_results , "psbo metaG - 5-20 µm size fraction") / world_pies(psbolargeT_results , "psbo metaT - 5-20 µm size fraction")) + plot_layout(guides = "collect")
+
+
+```
+
+
+
+how much annotated?
+
+```{r}
+
+length(row.names(rsemT_notzero)[ row.names(rsemT_notzero)%in% all_pfams$seqid]) / length(row.names(rsemT_notzero))
+
+length(row.names(rsemG_notzero)[row.names(rsemG_notzero) %in% all_pfams$seqid]) / length(row.names(rsemG_notzero))
+
+length(inboth$Row.names[inboth$Row.names %in% all_pfams$seqid]) / length(inboth$Row.names)
+
+```
+
+
+## Tara 18s v9 
+
+```{r}
+oga_18S<- data.frame(t(read.delim("OceanGeneAtlas_Data_20210806-17_10_/abundance_matrix.csv")[,-c(1,2)]))
+oga_18S$phaeo_relabund <- rowSums(oga_18S)
+oga_18S$Sample_ID <- row.names(oga_18S)
+oga18S <- oga_18S[,c("Sample_ID", "phaeo_relabund")]
+
+env_18s <- read.delim("OceanGeneAtlas_Data_20210806-17_10_/environmental_parameters.csv")[,c("Sample_ID", "Station", "Depth", "Size.fraction", "Sample_method", "Region")]
+
+env_18s$Station<- str_sub(env_18s$Station, 6)
+
+ribo <- merge(oga18S, env_18s)
+
+ribo <- ribo %>% filter(Depth == "SRF" & Size.fraction == "[0.8-5µm]")
+ribo <-  ribo[!duplicated(ribo$Station),]
 
 ```
 
 ```{r}
-metaGmapped <- read.table("PhaeoCat_nt.merged.numreads", row.names =1, header = TRUE)
-#362,262 rows
+Gv18 <- merge(ribo, alllsmallG_results$sums_final, by = "Station")
+Gv18<-  Gv18[!duplicated(Gv18$Station),] %>% filter(phaeo_relabund >5.264191e-06 ) %>% filter(Region != "[RS] Red Sea (MRGID:4264)")
+names(Gv18)[names(Gv18) == 'rate'] <- 'Grate'
 
-metaGmapped$rowsums <- rowSums(metaGmapped)
-
-metaGmapped<- metaGmapped[metaGmapped$rowsums > 0,]
-
-metaGmapped<- subset(metaGmapped, select =  -c(rowsums))
-
-#100,564 with non zero counts
-
-metaGmapped$strain <- sapply(row.names(metaGmapped), function (x) paste(strsplit(x, '_')[[1]][1], strsplit(x, '_')[[1]][2], strsplit(x, '_')[[1]][3], sep= '_') )
-
-metaGmapped_sums <- as.data.frame(metaGmapped %>% group_by(strain) %>% summarize_all(funs(sum))) 
-
-row.names(metaGmapped_sums) <- metaGmapped_sums$strain
-metaGmapped_sums <- metaGmapped_sums[,-1]
+Gv18$log_relabund <- log(Gv18$phaeo_relabund)
+Gv18$log_Grate <- log(Gv18$Grate)
 
 
-metaGmapped_sums_t <- t(metaGmapped_sums)
+summary(lm(log_relabund ~ log_Grate, data = Gv18))
 
-metaGmapped_sums_final<-as.data.frame((metaGmapped_sums_t / readcounts) * 100 )
+colors=c('#e9e9e9','#C14450','#f3757b','#f0b08f','#c2aba6','#60555f','#232229','#3c6481','#9fd6e6','#256F64','#63a375')
 
-metaGmapped_sums_final$totals <- rowSums(metaGmapped_sums_final)
+Gv18_logplot<- ggplot(Gv18, aes(x = log_relabund, y = log_Grate))+ theme_test()+geom_point(aes(fill=Region, shape = Depth), size =3) + scale_shape_manual(values= c( 21)) +scale_fill_manual(values=colors[-c(1)]) +guides(fill = guide_legend(override.aes=list(shape=21)))+theme(text = element_text(size=14))+ ylab("log metaG mapping rates") + xlab("log Tara 18S-v9 relative abundance") + geom_smooth(method = "lm", se = FALSE, color = "grey") + annotate("text", label =  "R2= 0.74", x =-8.5, y = 2 )
 
-latlongs<- metaG_metaDataNA %>% dplyr::select(run_accession, Latitude, Longitude, Station)
+```
 
-metaGmapped_sums_final$run_accession<- row.names(metaGmapped_sums_final)
+```{r}
+Tv18 <- merge(ribo, alllsmallT_results$sums_final, by = "Station")
+names(Tv18)[names(Tv18) == 'rate'] <- 'Trate'
+Tv18<-  Tv18[!duplicated(Tv18$Station),]%>% filter(phaeo_relabund >5.264191e-06 )
 
-metaGmapped_sums_final<- merge(metaGmapped_sums_final, latlongs, by = "run_accession")
+Tv18$log_relabund <- log(Tv18$phaeo_relabund)
+Tv18$log_Trate <- log(Tv18$Trate)
 
-metaGmapped_sums_final$Station<- str_sub(metaGmapped_sums_final$Station, 5)
+summary(lm(log_relabund ~ log_Trate, data = Tv18))
+
+TV18plot_logplot <- ggplot(Tv18, aes(x = log_relabund, y = log_Trate))+theme_test()+geom_point(aes(fill=Region, shape = Depth), size =3) + scale_shape_manual(values= c( 21)) +scale_fill_manual(values=colors[-c(1)]) +guides(fill = guide_legend(override.aes=list(shape=21)))+theme(text = element_text(size=14)) + ylab("log metaT mapping rates") + xlab("log Tara 18S-v9 relative abundance") + geom_smooth(method = "lm", se = FALSE, color = "grey") + annotate("text", label =  "R2= 0.0", x =-7, y = 3.5 )
+
+
+```
+
+
+
+```{r}
+TvG <- merge(Tv18, Gv18, by = "Station")
+
+names(TvG)[4] <- "Depth"
+names(TvG)[7] <- "Region"
+
+summary(lm(log_Grate ~ log_Trate, data = TvG))
+
+TvGlogplot<- ggplot(TvG, aes(x = log_Grate, y = log_Trate))+ geom_point() +theme_test()+geom_point(aes(fill=Region, shape = Depth), size =3) + scale_shape_manual(values= c( 21)) +scale_fill_manual(values=colors[-c(1)]) +guides(fill = guide_legend(override.aes=list(shape=21)))+theme(text = element_text(size=14))+ ylab("log metaT mapping rates") + xlab("log metaG mapping rates") + geom_smooth(method = "lm", se = FALSE, color = "grey") + annotate("text", label =  "R2= 0.0", x =-1, y = 3.5 )
+
+```
+
+
+```{r}
+metaG_scg_rates_small_4ribo <- metaG_scg_rates_small[,c("rate", "sample_alias", "Station")]
+names(metaG_scg_rates_small_4ribo)[names(metaG_scg_rates_small_4ribo) == 'rate'] <- 'Grate_scg'
+metaG_scg_rates_small_4ribo$Station<- str_sub(metaG_scg_rates_small_4ribo$Station, 6)
+
+scgGv18 <-  merge(ribo, metaG_scg_rates_small_4ribo, by = "Station")
+scgGv18<-  scgGv18[!duplicated(scgGv18$Station),]%>% filter(phaeo_relabund >5.264191e-06 ) %>% filter(Region != "[RS] Red Sea (MRGID:4264)")
+
+scgGv18$log_relabund <- log(scgGv18$phaeo_relabund)
+scgGv18$log_Grate_scg <- log(scgGv18$Grate_scg)
+
+summary(lm(log_Grate_scg ~ log_relabund, data = scgGv18))
+
+scgGv18_logplot<-ggplot(scgGv18, aes(x = log_relabund, y = log_Grate_scg)) +theme_test()+geom_point(aes(fill=Region, shape = Depth), size =3) + scale_shape_manual(values= c( 21)) +scale_fill_manual(values=colors[-c(1)]) +guides(fill = guide_legend(override.aes=list(shape=21)))+theme(text = element_text(size=14))+ xlab("log Tara 18S-v9 relative abundance") + ylab("log metaG mapping rates to SCGs") + geom_smooth(method = "lm", se = FALSE, color = "grey") + annotate("text", label =  "R2= 0.22", x =-8.5, y = -2 )
+
+```
+
+```{r}
+metaT_scg_rates_small_4ribo <- metaT_scg_rates_small[,c("rate", "sample_alias", "Station")]
+names(metaT_scg_rates_small_4ribo)[names(metaT_scg_rates_small_4ribo) == 'rate'] <- 'Trate_scg'
+metaT_scg_rates_small_4ribo$Station<- str_sub(metaT_scg_rates_small_4ribo$Station, 6)
+
+scgTv18 <-  merge(ribo, metaT_scg_rates_small_4ribo, by = "Station")
+scgTv18<-  scgTv18[!duplicated(scgTv18$Station),]%>% filter(phaeo_relabund >5.264191e-06 )
+
+scgTv18$log_relabund <- log(scgTv18$phaeo_relabund)
+scgTv18$log_Trate_scg <- log(scgTv18$Trate_scg)
+
+summary(lm(log_relabund ~ log_Trate_scg, data = scgTv18))
+
+scgTv18_logplot<- ggplot(scgTv18, aes(x = log_relabund, y = log_Trate_scg))+theme_test()+geom_point(aes(fill=Region, shape = Depth), size =3) + scale_shape_manual(values= c( 21)) +scale_fill_manual(values=colors[-c(1)]) +guides(fill = guide_legend(override.aes=list(shape=21)))+theme(text = element_text(size=14)) + xlab("log Tara 18S-v9 relative abundance") + ylab("log metaT mapping rates to SCGs") + geom_smooth(method = "lm", se = FALSE, color = "grey") + annotate("text", label =  "R2= 0.37", x =-8, y = -2 )
+
+```
+
+```{r}
+TvGscg <- merge(scgTv18 , scgGv18, by = "Station")
+names(TvGscg)[4] <- "Depth"
+names(TvGscg)[7] <- "Region"
+
+summary(lm(log_Grate_scg ~ log_Trate_scg, data = TvGscg))
+
+TvGscg_logplot<- ggplot(TvGscg, aes(x = log_Grate_scg, y = log_Trate_scg))+theme_test()+geom_point(aes(fill=Region, shape = Depth), size =3) + scale_shape_manual(values= c( 21)) +scale_fill_manual(values=colors[-c(1)]) + theme(text = element_text(size=14)) +guides(fill = guide_legend(override.aes=list(shape=21)))+ xlab("log metaG mapping rates to SCGs") + ylab("log metaT mapping rates to SCGs")+ geom_smooth(method = "lm", se = FALSE, color = "grey")  + annotate("text", label =  "R2= 0.06", x =-6, y = -2 )
+ 
+
+```
+
+
+
+```{r, warning = FALSE}
+((Gv18_logplot) + (TV18plot_logplot) + TvGlogplot) /
+   ((scgGv18_logplot) + (scgTv18_logplot) + TvGscg_logplot) + plot_layout(guides = "collect") 
+
+```
+
+ggsave("rate_comparisons.png", width = 20, height = 10)
+
+## PCoA of species compositions 
+
+```{r}
+metaT_loc_info <- metaT_metaData[,c("run_accession", "OS.region", "MP.biome", "BG.province")]
+metaG_loc_info <- metaG_metaData[,c("run_accession", "OS.region", "MP.biome", "BG.province")]
+loc_info_names <- c("run_accession","region", "biome", "province")
+
+names(metaT_loc_info) <- loc_info_names
+names(metaG_loc_info) <- loc_info_names
+
+alllsmallT_results$sums_final$size <- "small"
+alllargeT_results$sums_final$size <- "large"
+alllsmallG_results$sums_final$size <- "small"
+alllargeG_results$sums_final$size <- "small"
+alllsmallT_results$sums_final$type <- "T"
+alllargeT_results$sums_final$type <- "T"
+alllsmallG_results$sums_final$type <- "G"
+alllargeG_results$sums_final$type <- "T"
+
+metaT_res <- rbind(alllsmallT_results$sums_final, alllargeT_results$sums_final)
+metaT_res <-merge(metaT_res, metaT_loc_info)
+
+metaG_res <- rbind(alllsmallG_results$sums_final, alllargeG_results$sums_final )
+metaG_res<- merge(metaG_res,metaG_loc_info )
+
+all_res <- rbind(metaT_res, metaG_res)
+
+row.names(all_res) <- all_res$run_accession
+```
+
+
+```{r}
+library(phyloseq)
+species <- as.matrix(t(all_res[,3:12]))
+PHAEO = otu_table(species, taxa_are_rows = TRUE)
+
+meta <- all_res[,-c(3:12)]
+META<- sample_data(meta)
+
+
+physeq = phyloseq(PHAEO, META)
+
+
+psra<- transform_sample_counts(physeq, function(OTU) 100* OTU/sum(OTU))
+```
+
+
+
+```{r}
+
+
+colors=c('#e9e9e9','#C14450','#f3757b','#f0b08f','#c2aba6','#60555f','#232229','#3c6481','#9fd6e6','#256F64','#63a375')
+
+ordu = ordinate(psra, "PCoA", "bray")
+p<-plot_ordination(psra, ordu)+theme_bw()  +  theme(text = element_text(size=14)) +  geom_hline(yintercept = 0, linetype = "dashed", color = "lightgrey") +  geom_vline(xintercept = 0, linetype = "dashed", color = "lightgrey") + theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +geom_point(aes(fill=region, shape= type), size =3)   + scale_shape_manual(values= c(21, 24), name = "Sample Type") +scale_fill_manual(values=colors[-1]) +guides(fill = guide_legend(override.aes=list(shape=21)))
+
+
+p
+
+```
+
+
+
+```{r}
+p<-plot_ordination(psra, ordu)+theme_bw()  +  theme(text = element_text(size=14)) +  geom_hline(yintercept = 0, linetype = "dashed", color = "lightgrey") +  geom_vline(xintercept = 0, linetype = "dashed", color = "lightgrey") + theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +geom_point(aes(fill=region, shape= size), size =3)   + scale_shape_manual(values= c(21, 24), name = "Sample Type") +scale_fill_manual(values=colors[-1]) +guides(fill = guide_legend(override.aes=list(shape=21)))
+
+
+p
+```
+
+```{r}
+psra_small <- subset_samples(psra, size == "small")
+
+ordu = ordinate(psra_small, "PCoA", "bray")
+p<-plot_ordination(psra_small, ordu)+theme_bw()  +  theme(text = element_text(size=14)) +  geom_hline(yintercept = 0, linetype = "dashed", color = "lightgrey") +  geom_vline(xintercept = 0, linetype = "dashed", color = "lightgrey") + theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +geom_point(aes(fill=region, shape= type), size =3)   + scale_shape_manual(values= c(21, 24), name = "Sample Type") +scale_fill_manual(values=colors[-1]) +guides(fill = guide_legend(override.aes=list(shape=21)))
+
+
+p
+
+```
+ggsave("pcoa.png", width = 12)
+
+
+```{r}
+psra_small <- subset_samples(psra, size == "small")
+
+ordu = ordinate(psra_small, "PCoA", "bray")
+p<-plot_ordination(psra_small, ordu)+theme_bw()  +  theme(text = element_text(size=14)) + facet_grid(~type)+ geom_hline(yintercept = 0, linetype = "dashed", color = "lightgrey") +  geom_vline(xintercept = 0, linetype = "dashed", color = "lightgrey") + theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +geom_point(aes(fill=region, shape= type), size =3)   + scale_shape_manual(values= c(21, 24), name = "Sample Type") +scale_fill_manual(values=colors[-1]) +guides(fill = guide_legend(override.aes=list(shape=21)))
+
+
+p
+
+```
+```{r}
+psra_small <- subset_samples(psra, size == "small" & type == "T")
+
+ordu = ordinate(psra_small, "PCoA", "bray")
+p<-plot_ordination(psra_small, ordu)+theme_bw()  +  theme(text = element_text(size=14)) + geom_hline(yintercept = 0, linetype = "dashed", color = "lightgrey") +  geom_vline(xintercept = 0, linetype = "dashed", color = "lightgrey") + theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +geom_point(aes(fill=region, shape= type), size =3)   + scale_shape_manual(values= c(21, 24), name = "Sample Type") +scale_fill_manual(values=colors[-c(1, 6)]) +guides(fill = guide_legend(override.aes=list(shape=21)))
+
+p
+
+```
+```{r}
+psra_small <- subset_samples(psra, size == "small" & type == "G")
+
+ordu = ordinate(psra_small, "PCoA", "bray")
+p<-plot_ordination(psra_small, ordu)+theme_bw()  +  theme(text = element_text(size=14)) + geom_hline(yintercept = 0, linetype = "dashed", color = "lightgrey") +  geom_vline(xintercept = 0, linetype = "dashed", color = "lightgrey") + theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +geom_point(aes(fill=region, shape= type), size =3)   + scale_shape_manual(values= c( 24), name = "Sample Type") +scale_fill_manual(values=colors[-c(1)]) +guides(fill = guide_legend(override.aes=list(shape=21)))
+
+
+p
+
+```
+
+
+## PCoA by gene expression (or should be PCA with DESeq2?) 
+```{r}
+alllsmallT_mappingFrame<- read.table("metaT_all_regions_small.merged.numreads", row.names =1, header = TRUE)
+alllargeT_mappingFrame<- read.table("metaT_all_regions_large.merged.numreads", row.names =1, header = TRUE)
+alllsmallG_mappingFrame<- read.table("metaG_all_regions_small.merged.numreads.txt", row.names =1, header = TRUE)
+alllargeG_mappingFrame<- read.table("metaG_all_regions_large.merged.numreads", row.names =1, header = TRUE)
+```
+
+
+remove samples (columns) that are wrong sizes/device 
+merge by rownames 
+make phyloseq object (taxa are rows!)
+transform
+plot!
+
+
+
+# Salmon mapping to one reference at a time
+
+****** Need to split size fractions!!!
+
+```{r}
+P_ant_jgi_mappingrates<- read.csv("individualSalmon/metaT/P_ant_jgi_mappingrates.csv")
+P_antarctica_caron_mappingrates<-read.csv("individualSalmon/metaT/P_antarctica_caron_mappingrates.csv")
+P_antarctica_ccmp1374_mappingrates<- read.csv("individualSalmon/metaT/P_antarctica_ccmp1374_mappingrates.csv")
+names(P_antarctica_ccmp1374_mappingrates)<- c("run_accession" ,"P_antarctica_ccmp1374")
+P_cordata_ccmp3104_mappingrates<-read.csv("individualSalmon/metaT/P_cordata_ccmp3104_mappingrates.csv")
+P_jahnii_ccmp2496_mappingrates<-read.csv("individualSalmon/metaT/P_jahnii_ccmp2496_mappingrates.csv")
+P_rex_ccmp2000_mappingrates<-read.csv("individualSalmon/metaT/P_rex_ccmp2000_mappingrates.csv")
+P_sp_ccmp2710_mappingrates<-read.csv("individualSalmon/metaT/P_sp_ccmp2710_mappingrates.csv")
+P_globosa_ccmp1528_mappingrates<-read.csv("individualSalmon/metaT/P_globosa_ccmp1528_mappingrates.csv")
+names(P_globosa_ccmp1528_mappingrates) <- c("run_accession", "P_globosa_ccmp1528")
+P_globosa_jgi_mappingrates<- read.csv("individualSalmon/metaT/P_globosa_jgi_mappingrates.csv")
+allrefs<- rbind(alllsmallT_results$mapped, alllargeT_results$mapped)
+
+mrate_list <- list(P_ant_jgi_mappingrates, P_antarctica_caron_mappingrates, P_antarctica_ccmp1374_mappingrates, P_cordata_ccmp3104_mappingrates, P_jahnii_ccmp2496_mappingrates, P_rex_ccmp2000_mappingrates, P_sp_ccmp2710_mappingrates, P_globosa_ccmp1528_mappingrates,P_globosa_jgi_mappingrates, allrefs  )
+
+
+mappingrate_compare <- mrate_list %>% reduce(left_join, by = "run_accession") %>%  pivot_longer(!run_accession, names_to = "ref", values_to = "mapping_rate") 
 
 
 colors <- c("#0181BB", "#77DAD5", "#85bfd5", "#fac92c" , "#E4E4Af", "#ef3c23", "#ed8e83", "#215F38", "#cfe5cc", "#AB3B84") 
-            
 
-long<- metaGmapped_sums_final %>%  pivot_longer(!c(run_accession, Latitude, Longitude, Station, totals), names_to = "strain", values_to = "value" )
+ggplot(mappingrate_compare, aes(x = run_accession, y = mapping_rate , color = ref)) + geom_point(alpha = 0.8) + theme_bw() + theme(axis.text.x = element_text(angle = 90)) +scale_color_manual(values = c(colors[-5], "black"))
 
-metaGcoxcomb<-ggplot(long, aes(x=factor(strain), y=value, fill = strain)) + geom_bar(stat= "identity", width=1, color = "black") + facet_wrap(~Station, nrow = 4 ) + coord_polar() + xlab("") + ylab("") + theme_void() +scale_fill_manual(values = colors)  + ggtitle("metaG") + theme(legend.position="none")
-
-
-metaGcoxcomb
-```
-
-not scaled for size of reference (number of genes or bps)?
-
-
-
-
-```{r}
-
-strainlist <- unique(long$strain)
-
-metaG_pies<-ggplot(data = world) + geom_sf(lwd = 0) + geom_scatterpie(data=metaGmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r = totals*4), cols = strainlist, color=NA, alpha=.8 ) + theme_void() + theme(legend.position = "none")  + scale_fill_manual(values = colors)
-metaG_pies
-```
-```{r}
-metaGpies_zoom<-ggplot(data = world) + geom_sf(lwd = 0) + theme_bw() + geom_scatterpie(data=metaGmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r=2), cols = strainlist, color=NA, alpha=.8 ) +coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaG") + theme(legend.position = "none") + scale_fill_manual(values = colors) 
-metaGpies_zoom
-```
-
-
-
-Percent of reads  .... mapping to all references 
-```{r}
-#plot percent of all reads
-
-metaGpercent<- ggplot(data = world) + geom_sf(lwd = 0) +theme_bw() + geom_point(data = metaGmapped_sums_final, aes (x= Longitude, y= Latitude, size = totals), colour="black",pch=21, fill="#008080", alpha=0.5) + labs(size = "Percent of\ntotal reads") + coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaG") + theme(
-    legend.position = c(1, 0),
-    legend.justification = c("right", "bottom"),
-    legend.box.just = "right",
-    legend.margin = margin(1, 1, 1, 1)
-    ) + theme(
-  legend.title = element_text(size = 8),
-  legend.text = element_text(size = 6)
-  )
-
-metaGpercent
-
-```
-???? metaT mapping results different? ?? 
-
-
-```{r}
-metaTmapped <- read.table("PhaeoCat_nt.merged.numreads.metaT", row.names =1, header = TRUE)
-#362,262 rows
-
-metaTmapped$rowsums <- rowSums(metaTmapped)
-
-metaTmapped<- metaTmapped[metaTmapped$rowsums > 0,]
-
-metaTmapped<- subset(metaTmapped, select =  -c(rowsums))
-
-#52430 rows with non zero counts
-
-metaTmapped$strain <- sapply(row.names(metaTmapped), function (x) paste(strsplit(x, '_')[[1]][1], strsplit(x, '_')[[1]][2], strsplit(x, '_')[[1]][3], sep= '_') )
-
-metaTmapped_sums <- as.data.frame(metaTmapped %>% group_by(strain) %>% summarize_all(funs(sum))) 
-
-row.names(metaTmapped_sums) <- metaTmapped_sums$strain
-metaTmapped_sums <- metaTmapped_sums[,-1]
-
-
-metaTmapped_sums_t <- t(metaTmapped_sums)
-
-##### need new readcounts for trimmed T
-
-Treadcounts <- c(133272798, 113813576, 123998544, 167056441, 27157994, 134728099, 123514074, 35208248,144194901, 139768361, 30100073, 121332351, 182830877, 167816494 )
-
-metaTmapped_sums_final<-as.data.frame((metaTmapped_sums_t / Treadcounts) * 100 )
-
-metaTmapped_sums_final$totals <- rowSums(metaTmapped_sums_final)
-
-latlongs<- metaT_metaDataNA %>%dplyr:: filter(Fraction.lower...µm. == 5 & Env.feature  =="[SRF] surface water layer (ENVO:00010504)") %>% dplyr::select(run_accession, Latitude, Longitude, Station)
-
-metaTmapped_sums_final$run_accession<- row.names(metaTmapped_sums_final)
-
-metaTmapped_sums_final<- merge(metaTmapped_sums_final, latlongs, by = "run_accession")
-
-metaTmapped_sums_final <- metaTmapped_sums_final[!duplicated(metaTmapped_sums_final$Station),]
-metaTmapped_sums_final$Station<- str_sub(metaTmapped_sums_final$Station, 5)
-
-long<- metaTmapped_sums_final %>%  pivot_longer(!c(run_accession, Latitude, Longitude, totals, Station), names_to = "strain", values_to = "value" )
-
-metaTcoxcomb<-ggplot(long, aes(x=factor(strain), y=value, fill = strain)) + geom_bar(stat= "identity", width=1, color = "black") + facet_wrap(~Station, nrow = 4 ) + coord_polar() + xlab("") + ylab("") + theme_void() +scale_fill_manual(values = colors) + ggtitle("metaT")
-
-metaTcoxcomb
 ```
 
 
 ```{r}
-stations / (metaGcoxcomb | metaTcoxcomb + plot_layout(guides = 'collect'))
+mrate_list <- list(P_ant_jgi_mappingrates, P_antarctica_caron_mappingrates, P_antarctica_ccmp1374_mappingrates, P_cordata_ccmp3104_mappingrates, P_jahnii_ccmp2496_mappingrates, P_rex_ccmp2000_mappingrates, P_sp_ccmp2710_mappingrates, P_globosa_ccmp1528_mappingrates,P_globosa_jgi_mappingrates)
+
+metamap <- metaT_metaData %>% select(run_accession, Latitude, Longitude)
+
+mappingrate_compare <- mrate_list %>% reduce(left_join, by = "run_accession") 
+
+withlocs<- mappingrate_compare %>% left_join(metamap, by = "run_accession") 
+
+
+smalls <- withlocs %>% filter(run_accession %in% metaT_all_small$run_accession)
+bigs <- withlocs %>% filter(run_accession %in% metaT_all_large$run_accession)
+
+strainlist<-c( "P_ant_jgi"     ,     "P_antarctica_caron"      ,  "P_antarctica_ccmp1374"   ,  "P_cordata_ccmp3104" ,"P_globosa_ccmp1528", "P_globosa_jgi"  ,    "P_jahnii_ccmp2496" , "P_rex_ccmp2000"  ,   "P_sp_ccmp2710" )
+  
+mappingcomparesmall<-ggplot(data = world) + geom_sf(lwd = 0) + theme_void() + geom_scatterpie(data=smalls,aes(x=Longitude, y=Latitude, group = run_accession, r=3), cols = strainlist, color=NA, alpha=.8 ) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("") +  scale_fill_manual(values = colors[-5]) + coord_sf(xlim = c(-180, 100), ylim = c(-90, 90), expand = FALSE) #+ 
+    # theme(legend.position = "none") # + theme(plot.title = element_text(size = 5)) 
+
+mappingcomparebig<-ggplot(data = world) + geom_sf(lwd = 0) + theme_void() + geom_scatterpie(data=bigs,aes(x=Longitude, y=Latitude, group = run_accession, r=3), cols = strainlist, color=NA, alpha=.8 ) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("") +  scale_fill_manual(values = colors[-5]) + coord_sf(xlim = c(-180, 100), ylim = c(-90, 90), expand = FALSE)
+
+mappingcomparesmall / mappingcomparebig
 ```
-
-
-
 
 
 ```{r}
+P_ant_jgi_mappingrates<- read.csv("individualSalmon/metaT/P_ant_jgi_mappingrates.csv")
 
-strainlist <- unique(long$strain)
+P_antarctica_caron_mappingrates<-read.csv("individualSalmon/metaT/P_antarctica_caron_mappingrates.csv")
 
-metaT_pies <- ggplot(data = world) + geom_sf(lwd = 0) + geom_scatterpie(data=metaTmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r = totals/2), cols = strainlist, color=NA, alpha=.8 ) + theme_void()  + scale_fill_manual(values = colors) 
+P_antarctica_ccmp1374_mappingrates<- read.csv("individualSalmon/metaT/P_antarctica_ccmp1374_mappingrates.csv")
+names(P_antarctica_ccmp1374_mappingrates)<- c("run_accession" ,"P_antarctica_ccmp1374")
 
-metaT_pies 
+P_cordata_ccmp3104_mappingrates<-read.csv("individualSalmon/metaT/P_cordata_ccmp3104_mappingrates.csv")
+
+P_jahnii_ccmp2496_mappingrates<-read.csv("individualSalmon/metaT/P_jahnii_ccmp2496_mappingrates.csv")
+
+P_rex_ccmp2000_mappingrates<-read.csv("individualSalmon/metaT/P_rex_ccmp2000_mappingrates.csv")
+
+P_sp_ccmp2710_mappingrates<-read.csv("individualSalmon/metaT/P_sp_ccmp2710_mappingrates.csv")
+
+P_globosa_ccmp1528_mappingrates<-read.csv("individualSalmon/metaT/P_globosa_ccmp1528_mappingrates.csv")
+names(P_globosa_ccmp1528_mappingrates) <- c("run_accession", "P_globosa_ccmp1528")
+
+P_globosa_jgi_mappingrates<- read.csv("individualSalmon/metaT/P_globosa_jgi_mappingrates.csv")
+allrefs<- rbind(alllsmallT_results$mapped, alllargeT_results$mapped)
 ```
-
-
-```{r}
-metaT_pies_zoom<- ggplot(data = world) + geom_sf(lwd = 0) + geom_scatterpie(data=metaTmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r=2), cols = strainlist, color=NA, alpha=.8 ) + theme_bw()  + scale_fill_manual(values = colors) +
-    coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaT")  + theme(
-  legend.title = element_text(size = 8),
-  legend.text = element_text(size = 6)
-  ) +  labs(fill = "Reference" ) 
-
-legend<- get_legend(metaT_pies_zoom)
-
-metaT_pies_zoom <- metaT_pies_zoom + theme(legend.position = "none")
-```
-
-
-
-Percent of reads  .... mapping to all references 
-```{r, warinings=FALSE}
-#plot percent of all reads
-
-metatT_percent<- ggplot(data = world) + geom_sf(lwd = 0) +theme_bw() + geom_point(data = metaTmapped_sums_final, aes (x= Longitude, y= Latitude, size = totals), colour="black",pch=21, fill="#E69F00", alpha=0.5) + coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaT") + labs(size = "Percent of\ntotal reads" ) + theme(
-    legend.position = c(1, 0),
-    legend.justification = c("right", "bottom"),
-    legend.box.just = "right",
-    legend.margin = margin(1, 1, 1, 1)
-    ) + theme(
-  legend.title = element_text(size = 8),
-  legend.text = element_text(size = 6)
-  )
-
-metatT_percent
-```
-```{r}
-(metaGpercent |  metaGpies_zoom) / (metatT_percent | (metaT_pies_zoom + plot_layout(guides = 'collect')))
-```
-```{r}
-arranged <- ggarrange(metaGpercent,metaGpies_zoom,metatT_percent,metaT_pies_zoom)
-ggarrange(arranged, legend)
-```
-```{r}
-arranged
-```
-
 
 
 
 % Ortho groups   -   on map 
-
-
 
 metaT
 ```{r}
@@ -828,32 +1299,170 @@ metaTmapped$strain <- sapply(row.names(metaTmapped), function (x) paste(strsplit
 
 ##split data frame by strain
 
-
-
+caron <- metaTmapped[metaTmapped$strain=="P_antarctica_caron",]
+###UGHHHHHHH the mmetsp protein and NT files have different gene ids!
 ##remove strain from  of gene name 
 
-
+jgi_ant  <- metaTmapped[metaTmapped$strain=="P_ant_jgi",]
 ##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
 
-gene_sets4pfam(2)
+jgisets<- gene_sets4pfam(4)
+
+jgi_ant$gene1<- sapply(row.names(jgi_ant), function (x) paste(strsplit(x, '_')[[1]][4]))
+jgi_ant$gene <- sapply(jgi_ant$gene1, function (x) paste(strsplit(x, '\\.')[[1]][1]))
+
+jgisets$core$gene <- str_replace_all(jgisets$core$gene, fixed(" "), "")
+core <- jgi_ant %>% filter(gene %in% jgisets$core$gene) #343 , still only 746 after fixing white space --- ok bc these are only the ones that were expressed (already filtered out zero sums)
+core$OrthoSet <- "core"
+
+jgisets$shared$gene <- str_replace_all(jgisets$shared$gene, fixed(" "), "")
+shared <- jgi_ant %>% filter(gene %in% jgisets$shared$gene)
+shared$OrthoSet <- "shared"
+
+jgisets$unique$gene <- str_replace_all(jgisets$unique$gene, fixed(" "), "")
+unique <- jgi_ant %>% filter(gene %in% jgisets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(jgisets$core$gene, jgisets$shared$gene, jgisets$unique$gene )
+unassigned <-  jgi_ant %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+jgi_ant_wOrthoset <- rbind(core, shared, unique, unassigned)
+jgi_ant_wOrthoset <- dplyr::select(jgi_ant_wOrthoset,-gene1)
+#total = 3501, == the original number of genes (with mapped reads)! 
+
+```
+
+jgi globosa
+```{r}
+jgi_glob  <- metaTmapped[metaTmapped$strain=="P_globosa_jgi",]
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+globjgisets<- gene_sets4pfam(8)
+
+jgi_glob$gene1<- sapply(row.names(jgi_glob), function (x) paste(strsplit(x, '_')[[1]][4]))
+jgi_glob$gene <- sapply(jgi_glob$gene1, function (x) paste(strsplit(x, '\\.')[[1]][1]))
+
+globjgisets$core$gene <- str_replace_all(globjgisets$core$gene, fixed(" "), "")
+core <- jgi_glob %>% filter(gene %in% globjgisets$core$gene) #1333
+core$OrthoSet <- "core"
+
+globjgisets$shared$gene <- str_replace_all(globjgisets$shared$gene, fixed(" "), "")
+shared <- jgi_glob %>% filter(gene %in% globjgisets$shared$gene)
+shared$OrthoSet <- "shared"
+
+globjgisets$unique$gene <- str_replace_all(globjgisets$unique$gene, fixed(" "), "")
+unique <- jgi_glob %>% filter(gene %in% globjgisets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(globjgisets$core$gene, globjgisets$shared$gene, globjgisets$unique$gene )
+unassigned <-  jgi_glob %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+jgi_glob_wOrthoset <- rbind(core, shared, unique, unassigned)
+jgi_glob_wOrthoset <- dplyr::select(jgi_glob_wOrthoset,-gene1)
+```
+
+```{r}
+g1528  <- metaTmapped[metaTmapped$strain=="P_globosa_ccmp1528",]
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+g1528sets<- gene_sets4pfam(7)
+
+g1528$gene <- sapply(row.names(g1528), function (x) paste(strsplit(x, '_')[[1]][4], strsplit(x, '_')[[1]][5], strsplit(x, '_')[[1]][6],strsplit(x, '_')[[1]][7], strsplit(x, '_')[[1]][8], sep= '_') )
+
+g1528sets$core$gene <- str_replace_all(g1528sets$core$gene, fixed(" "), "")
+core <- g1528 %>% filter(gene %in% g1528sets$core$gene) #1333
+core$OrthoSet <- "core"
+
+g1528sets$shared$gene <- str_replace_all(g1528sets$shared$gene, fixed(" "), "")
+shared <-  g1528 %>% filter(gene %in% g1528sets$shared$gene)
+shared$OrthoSet <- "shared"
+
+g1528sets$unique$gene <- str_replace_all(g1528sets$unique$gene, fixed(" "), "")
+unique <-  g1528 %>% filter(gene %in% g1528sets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(g1528sets$core$gene, g1528sets$shared$gene, g1528sets$unique$gene )
+unassigned <-  g1528 %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+g1528_wOrthoset <- rbind(core, shared, unique, unassigned)
+
+```
+
+
+```{r}
+c3104  <- metaTmapped[metaTmapped$strain=="P_cordata_ccmp3104",]
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+c3104sets<- gene_sets4pfam(5)
+
+c3104$gene <- sapply(row.names(c3104), function (x) paste(strsplit(x, '_')[[1]][4], strsplit(x, '_')[[1]][5], sep= '_') )
+
+c3104sets$core$gene <- str_replace_all(c3104sets$core$gene, fixed(" "), "")
+core <- c3104 %>% filter(gene %in% c3104sets$core$gene) #1333
+core$OrthoSet <- "core"
+
+c3104sets$shared$gene <- str_replace_all(c3104sets$shared$gene, fixed(" "), "")
+shared <-  c3104 %>% filter(gene %in% c3104sets$shared$gene)
+shared$OrthoSet <- "shared"
+
+c3104sets$unique$gene <- str_replace_all(c3104sets$unique$gene, fixed(" "), "")
+unique <-  c3104 %>% filter(gene %in% c3104sets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(c3104sets$core$gene, c3104sets$shared$gene, c3104sets$unique$gene )
+unassigned <- c3104 %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+c3104_wOrthoset <- rbind(core, shared, unique, unassigned)
+```
+
+```{r}
+j2496 <- metaTmapped[metaTmapped$strain=="P_jahnii_ccmp2496",]
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+j2496sets<- gene_sets4pfam(9)
+
+j2496$gene <- sapply(row.names(j2496), function (x) paste(strsplit(x, '_')[[1]][4], strsplit(x, '_')[[1]][5], strsplit(x, '_')[[1]][6],strsplit(x, '_')[[1]][7], strsplit(x, '_')[[1]][8], sep= '_') )
+
+j2496sets$core$gene <- str_replace_all(j2496sets$core$gene, fixed(" "), "")
+core <- j2496 %>% filter(gene %in% j2496sets$core$gene) #1333
+core$OrthoSet <- "core"
+
+j2496sets$shared$gene <- str_replace_all(j2496sets$shared$gene, fixed(" "), "")
+shared <-  j2496 %>% filter(gene %in% j2496sets$shared$gene)
+shared$OrthoSet <- "shared"
+
+j2496sets$unique$gene <- str_replace_all(j2496sets$unique$gene, fixed(" "), "")
+unique <- j2496 %>% filter(gene %in% j2496sets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(j2496sets$core$gene, j2496sets$shared$gene, j2496sets$unique$gene )
+unassigned <- j2496 %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+j2496_wOrthoset <- rbind(core, shared, unique, unassigned)
+```
 
 
 
-##rbind all the data 
+```{r}
+##rbind all the data  for all strains .... 
+ mapped_orthos<-rbind(jgi_glob_wOrthoset, jgi_ant_wOrthoset, g1528_wOrthoset, c3104_wOrthoset,j2496_wOrthoset  )
+
+mapped_orthos<- mapped_orthos %>% dplyr::select(-gene, - strain)
 
 
 ## summarize by orthogroup category 
 
+metaTmapped_sums <- as.data.frame(mapped_orthos %>% group_by(OrthoSet) %>% summarize_all(funs(sum))) 
 
 
 ## plot on map 
 
-
-
-
-metaTmapped_sums <- as.data.frame(metaTmapped %>% group_by(strain) %>% summarize_all(funs(sum))) 
-
-row.names(metaTmapped_sums) <- metaTmapped_sums$strain
+row.names(metaTmapped_sums) <- metaTmapped_sums$OrthoSet
 metaTmapped_sums <- metaTmapped_sums[,-1]
 
 
@@ -874,5 +1483,705 @@ metaTmapped_sums_final$run_accession<- row.names(metaTmapped_sums_final)
 metaTmapped_sums_final<- merge(metaTmapped_sums_final, latlongs, by = "run_accession")
 
 metaTmapped_sums_final <- metaTmapped_sums_final[!duplicated(metaTmapped_sums_final$Station),]
-metaTmapped_sums_final$Station<- str_sub(metaTmapped_sums_final$Station, 5)
+metaTmapped_sums_final$Station<- str_sub(metaTmapped_sums_final$Station, 6)
 ```
+
+
+```{r}
+metaT_pies_zoom<- ggplot(data = world) + geom_sf(lwd = 0) + geom_scatterpie(data=metaTmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r=2), cols = c("core", "shared", "unassigned", "unique"), color=NA, alpha=.8 ) + theme_bw()  + scale_fill_manual(values = colors) +
+    coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaT")  + theme(
+  legend.title = element_text(size = 8),
+  legend.text = element_text(size = 6)
+  ) +  labs(fill = "Reference" ) 
+
+
+metaT_pies_zoom
+```
+
+metaG
+```{r}
+dim(metaGmapped)
+# 100564 rows
+
+##split data frame by strain
+
+jgi_ant  <- metaGmapped[metaGmapped$strain=="P_ant_jgi",]
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+jgisets<- gene_sets4pfam(4)
+
+jgi_ant$gene1<- sapply(row.names(jgi_ant), function (x) paste(strsplit(x, '_')[[1]][4]))
+jgi_ant$gene <- sapply(jgi_ant$gene1, function (x) paste(strsplit(x, '\\.')[[1]][1]))
+
+jgisets$core$gene <- str_replace_all(jgisets$core$gene, fixed(" "), "")
+core <- jgi_ant %>% filter(gene %in% jgisets$core$gene) #343 , still only 746 after fixing white space --- ok bc these are only the ones that were expressed (already filtered out zero sums)
+core$OrthoSet <- "core"
+
+jgisets$shared$gene <- str_replace_all(jgisets$shared$gene, fixed(" "), "")
+shared <- jgi_ant %>% filter(gene %in% jgisets$shared$gene)
+shared$OrthoSet <- "shared"
+
+jgisets$unique$gene <- str_replace_all(jgisets$unique$gene, fixed(" "), "")
+unique <- jgi_ant %>% filter(gene %in% jgisets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(jgisets$core$gene, jgisets$shared$gene, jgisets$unique$gene )
+unassigned <-  jgi_ant %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+jgi_ant_wOrthoset <- rbind(core, shared, unique, unassigned)
+jgi_ant_wOrthoset <- dplyr::select(jgi_ant_wOrthoset,-gene1)
+#total = 3501, == the original number of genes (with mapped reads)! 
+
+```
+
+jgi globosa
+```{r}
+jgi_glob  <- metaGmapped[metaGmapped$strain=="P_globosa_jgi",]
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+globjgisets<- gene_sets4pfam(8)
+
+jgi_glob$gene1<- sapply(row.names(jgi_glob), function (x) paste(strsplit(x, '_')[[1]][4]))
+jgi_glob$gene <- sapply(jgi_glob$gene1, function (x) paste(strsplit(x, '\\.')[[1]][1]))
+
+globjgisets$core$gene <- str_replace_all(globjgisets$core$gene, fixed(" "), "")
+core <- jgi_glob %>% filter(gene %in% globjgisets$core$gene) #1333
+core$OrthoSet <- "core"
+
+globjgisets$shared$gene <- str_replace_all(globjgisets$shared$gene, fixed(" "), "")
+shared <- jgi_glob %>% filter(gene %in% globjgisets$shared$gene)
+shared$OrthoSet <- "shared"
+
+globjgisets$unique$gene <- str_replace_all(globjgisets$unique$gene, fixed(" "), "")
+unique <- jgi_glob %>% filter(gene %in% globjgisets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(globjgisets$core$gene, globjgisets$shared$gene, globjgisets$unique$gene )
+unassigned <-  jgi_glob %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+jgi_glob_wOrthoset <- rbind(core, shared, unique, unassigned)
+jgi_glob_wOrthoset <- dplyr::select(jgi_glob_wOrthoset,-gene1)
+```
+
+```{r}
+g1528  <- metaGmapped[metaGmapped$strain=="P_globosa_ccmp1528",]
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+g1528sets<- gene_sets4pfam(7)
+
+g1528$gene <- sapply(row.names(g1528), function (x) paste(strsplit(x, '_')[[1]][4], strsplit(x, '_')[[1]][5], strsplit(x, '_')[[1]][6],strsplit(x, '_')[[1]][7], strsplit(x, '_')[[1]][8], sep= '_') )
+
+g1528sets$core$gene <- str_replace_all(g1528sets$core$gene, fixed(" "), "")
+core <- g1528 %>% filter(gene %in% g1528sets$core$gene) #1333
+core$OrthoSet <- "core"
+
+g1528sets$shared$gene <- str_replace_all(g1528sets$shared$gene, fixed(" "), "")
+shared <-  g1528 %>% filter(gene %in% g1528sets$shared$gene)
+shared$OrthoSet <- "shared"
+
+g1528sets$unique$gene <- str_replace_all(g1528sets$unique$gene, fixed(" "), "")
+unique <-  g1528 %>% filter(gene %in% g1528sets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(g1528sets$core$gene, g1528sets$shared$gene, g1528sets$unique$gene )
+unassigned <-  g1528 %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+g1528_wOrthoset <- rbind(core, shared, unique, unassigned)
+
+```
+
+
+```{r}
+c3104  <- metaGmapped[metaGmapped$strain=="P_cordata_ccmp3104",]
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+c3104sets<- gene_sets4pfam(5)
+
+c3104$gene <- sapply(row.names(c3104), function (x) paste(strsplit(x, '_')[[1]][4], strsplit(x, '_')[[1]][5], sep= '_') )
+
+c3104sets$core$gene <- str_replace_all(c3104sets$core$gene, fixed(" "), "")
+core <- c3104 %>% filter(gene %in% c3104sets$core$gene) #1333
+core$OrthoSet <- "core"
+
+c3104sets$shared$gene <- str_replace_all(c3104sets$shared$gene, fixed(" "), "")
+shared <-  c3104 %>% filter(gene %in% c3104sets$shared$gene)
+shared$OrthoSet <- "shared"
+
+c3104sets$unique$gene <- str_replace_all(c3104sets$unique$gene, fixed(" "), "")
+unique <-  c3104 %>% filter(gene %in% c3104sets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(c3104sets$core$gene, c3104sets$shared$gene, c3104sets$unique$gene )
+unassigned <- c3104 %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+c3104_wOrthoset <- rbind(core, shared, unique, unassigned)
+```
+
+```{r}
+j2496 <- metaGmapped[metaGmapped$strain=="P_jahnii_ccmp2496",]
+##merge with Orthogroup category to gene name (core/shared/unassigned/ unique)
+
+j2496sets<- gene_sets4pfam(9)
+
+j2496$gene <- sapply(row.names(j2496), function (x) paste(strsplit(x, '_')[[1]][4], strsplit(x, '_')[[1]][5], strsplit(x, '_')[[1]][6],strsplit(x, '_')[[1]][7], strsplit(x, '_')[[1]][8], sep= '_') )
+
+j2496sets$core$gene <- str_replace_all(j2496sets$core$gene, fixed(" "), "")
+core <- j2496 %>% filter(gene %in% j2496sets$core$gene) #1333
+core$OrthoSet <- "core"
+
+j2496sets$shared$gene <- str_replace_all(j2496sets$shared$gene, fixed(" "), "")
+shared <-  j2496 %>% filter(gene %in% j2496sets$shared$gene)
+shared$OrthoSet <- "shared"
+
+j2496sets$unique$gene <- str_replace_all(j2496sets$unique$gene, fixed(" "), "")
+unique <- j2496 %>% filter(gene %in% j2496sets$unique$gene)
+unique$OrthoSet <- "unique"
+
+assigned <- c(j2496sets$core$gene, j2496sets$shared$gene, j2496sets$unique$gene )
+unassigned <- j2496 %>% filter(gene %ni% assigned)
+unassigned$OrthoSet <- "unassigned"
+
+j2496_wOrthoset <- rbind(core, shared, unique, unassigned)
+```
+
+
+
+```{r}
+##rbind all the data  for all strains .... 
+ mapped_orthos<-rbind(jgi_glob_wOrthoset, jgi_ant_wOrthoset, g1528_wOrthoset, c3104_wOrthoset,j2496_wOrthoset  )
+
+mapped_orthos<- mapped_orthos %>% dplyr::select(-gene, - strain)
+
+
+## summarize by orthogroup category 
+
+metaGmapped_sums <- as.data.frame(mapped_orthos %>% group_by(OrthoSet) %>% summarize_all(funs(sum))) 
+
+
+## plot on map 
+
+row.names(metaGmapped_sums) <- metaGmapped_sums$OrthoSet
+metaGmapped_sums <- metaGmapped_sums[,-1]
+
+
+metaGmapped_sums_t <- t(metaGmapped_sums)
+
+##### need new readcounts for trimmed T
+
+Greadcounts <- c(204139639, 204384011, 173976202, 181163832, 171053618, 159974552, 179140057, 139442782, 167267129, 191132398, 182785130)
+
+metaGmapped_sums_final<-as.data.frame((metaGmapped_sums_t / Greadcounts) * 100 )
+
+metaGmapped_sums_final$totals <- rowSums(metaGmapped_sums_final)
+
+latlongs<- metaG_metaDataNA %>% dplyr::select(run_accession, Latitude, Longitude, Station)
+
+metaGmapped_sums_final$run_accession<- row.names(metaGmapped_sums_final)
+
+metaGmapped_sums_final<- merge(metaGmapped_sums_final, latlongs, by = "run_accession")
+
+metaGmapped_sums_final <- metaGmapped_sums_final[!duplicated(metaGmapped_sums_final$Station),]
+metaGmapped_sums_final$Station<- str_sub(metaGmapped_sums_final$Station, 6)
+```
+
+
+```{r}
+metaG_pies_zoom<- ggplot(data = world) + geom_sf(lwd = 0) + geom_scatterpie(data=metaGmapped_sums_final ,aes(x=Longitude, y=Latitude, group = run_accession, r=2), cols = c("core", "shared", "unassigned", "unique"), color=NA, alpha=.8 ) + theme_bw()  + scale_fill_manual(values = colors) +
+    coord_sf(xlim = c(-90, 5), ylim = c(20, 60), expand = FALSE) +annotation_scale(location = "bl", width_hint = 0.25) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + xlab("")+ ylab("")+ggtitle("metaG")  + theme(
+  legend.title = element_text(size = 8),
+  legend.text = element_text(size = 6)
+  ) +  labs(fill = "Reference" ) 
+
+
+metaG_pies_zoom
+```
+
+
+```{r, fig.width =6}
+ggarrange(metaT_pies_zoom, metaG_pies_zoom, nrow =2, common.legend = TRUE)
+```
+
+
+
+HEATMAP 
+
+prep tpm data
+```{r}
+metaTtpm <- read.table("metaT_PhaeoCat_na_med_so.merged.tpm", row.names =1, header = TRUE)
+Tsamps<- names(metaTtpm)
+
+metaTtpm$rowsums <- rowSums(metaTtpm)
+metaTtpm<-metaTtpm[metaTtpm$rowsums > 0,]
+metaTtpm<- subset(metaTtpm, select =  -c(rowsums))
+#74,655
+
+metaTnoZ <- row.names(metaTtpm)
+
+metaGtpm <- read.table("metaG_PhaeoCat_na_med_so.merged.tpm", row.names =1, header = TRUE)
+#362,262  each 
+Gsamps<- names(metaGtpm)
+
+metaGtpm$rowsums <- rowSums(metaGtpm)
+metaGtpm<-metaGtpm[metaGtpm$rowsums > 0,]
+metaGtpm<- subset(metaGtpm, select =  -c(rowsums))
+#194,429
+metaGnoZ <- row.names(metaGtpm)
+
+TGtpms <- merge(metaTtpm,metaGtpm,by=0 )
+row.names(TGtpms)<- TGtpms$Row.names
+TGtpms<- subset(TGtpms, select =  -c(Row.names))
+
+TGtpms$rowsums <- rowSums(TGtpms)
+TGtpms<-TGtpms[TGtpms$rowsums > 0,]
+TGtpms<- subset(TGtpms, select =  -c(rowsums))
+#212,628 have non zero counts
+
+```
+
+make heatmap
+```{r}
+library(pheatmap)
+tpm_mat <- as.matrix(TGtpms)
+
+selected <- order(rowSums(TGtpms))[1:10000]
+
+pheatmap(tpm_mat[selected,], show_rownames=FALSE)
+
+```
+intersection
+
+```{r}
+length(metaTnoZ[metaTnoZ %in%metaGnoZ] )
+```
+
+```{r}
+length(metaGnoZ[metaGnoZ %in%metaTnoZ] )
+```
+
+```{r}
+sum(row.names(metaTmapped) %in% row.names(metaGmapped))
+```
+
+
+rbind all the pfam annotations: 
+```{r}
+
+library(stringi)
+library(data.table)
+library(magrittr)
+library(tidyr)
+library(GO.db)
+library(GOxploreR)
+
+pfam_annots <- rbind(p_ant_caron_annot, p_ant_jgi_annot, p_ant_ccmp1374_annot, p_globosa_jgi_annot, p_globosa_ccmp1528_annot, p_sp_ccmp2710_annot, p_cordata_ccmp3104_annot, p_jahnii_ccmp2496_annot, p_rex_ccmp2000_annot)
+
+
+pfam_annots$Dbxref <- stri_sub(pfam_annots$Dbxref , from = 2, to = -2)
+pfam_annots$Pfam <- gsub("\\..*","", pfam_annots$Dbxref)
+
+pfam2go <- fread("https://raw.githubusercontent.com/maggimars/PcordataSymbiosisDGE/master/pfam2go4R.txt", header = FALSE)
+names(pfam2go) <- c("V1", "GO")
+pfam2go1 <- pfam2go %>%
+  separate(V1, c('V1_1', 'GO_desc'), sep = '>') %>%
+  separate(V1_1, c("Pfam", "name"), sep = " ") 
+
+
+gotest<- (pfam2go1$GO)[-c(167 ,564, 664, 801, 937, 1301, 1365 ,2112, 2280, 2369, 2863, 3124, 3265, 3310, 3422, 3430, 3513 ,3671, 3728 ,4332 ,4335, 4341, 4371, 4786, 5209 ,5774, 5794, 6106, 6146 ,6289 ,6336 ,6542, 6883, 7221, 7639 ,7651, 8006, 8029, 8440, 8524, 8587, 8655, 8806, 8876, 9310, 9369, 9413, 9426, 9493, 9704 ,9730 ,9738)]
+
+pfam2go_removebad <- pfam2go1[-c(167 ,564, 664, 801, 937, 1301, 1365 ,2112, 2280, 2369, 2863, 3124, 3265, 3310, 3422, 3430, 3513 ,3671, 3728 ,4332 ,4335, 4341, 4371, 4786, 5209 ,5774, 5794, 6106, 6146 ,6289 ,6336 ,6542, 6883, 7221, 7639 ,7651, 8006, 8029, 8440, 8524, 8587, 8655, 8806, 8876, 9310, 9369, 9413, 9426, 9493, 9704 ,9730 ,9738),]
+
+Gocat<- getGOcategory(goterm = gotest)
+names(Gocat) <- c("GO", "node_type", "Category")
+Gocat<- Gocat[,c("GO", "Category")]
+
+pfam2go2 <- cbind(pfam2go_removebad , Gocat)
+pfam2go2 <- pfam2go2[,c(1,2,3,4,6)]
+
+pfam2goBP <- filter(pfam2go2, Category == "BP")
+
+pfamGOannots<- merge(pfam2goBP, pfam_annots, by = "Pfam" )
+
+```
+
+
+```{r}
+## Function to get percent mapped and annotation rate frames 
+
+annotation_rate <- function(mapped_percent, metaFrame, TorG) {
+
+  mapped_percent$geneid <- row.names(mapped_percent)
+  mapped_percent_annotated <- mapped_percent[mapped_percent$geneid %in% pfam_annots$geneid ,]
+  mapped_percent_annotated <- mapped_percent_annotated %>% dplyr::select(-c(geneid)) 
+
+  mapped<- data.frame(colSums(mapped_percent_annotated))
+  names(mapped) <- c("percentAnnotated")
+  mapped$run_accession <- row.names(mapped)
+
+  latlongs<- metaFrame %>% dplyr::select(run_accession, Latitude, Longitude, Station, Device)
+  mapped<- merge(mapped, latlongs)
+
+  mapped$type <- TorG
+  
+  return(mapped)
+}
+
+smallG_annotationrate <- annotation_rate(smallG_results$mapped,  metaG_metaData_na_med_so, "metaG")
+largeG_annotationrate <- annotation_rate(largeG_results$mapped,  metaG_metaData_na_med_so, "metaG")
+smallT_annotationrate <- annotation_rate(smallT_results$mapped,  metaT_metaData_na_med_so, "metaT")
+largeT_annotationrate <- annotation_rate(largeT_results$mapped,  metaT_metaData_na_med_so, "metaT")
+
+```
+
+
+
+
+annotated_percents
+```{r}
+annotated_percent_plot <- function(metaT, metaG, title){
+  
+  annotTG <- rbind(metaT, metaG)
+  annotTG <- annotTG[order(annotTG$Longitude),]
+  annotTG <- annotTG %>% filter(Latitude > 0)
+  annotTG$Station<- str_sub(annotTG$Station, 6)
+  order <- unique(annotTG$Station)
+  annotTG$Station_o <- factor(annotTG$Station, levels = order)
+  fraction_annotplot<- ggplot(annotTG, aes(x = Station_o, y = percentAnnotated  , color = type , shape = Device)) + geom_point(size=4, alpha = 0.8) + theme_bw() +scale_color_manual(values = c("#008080","#E69F00")) +ylab("Percent of mapped reads mapping to a Pfam annotated sequence") + xlab("Station") + theme(text = element_text(size = 20))+ ggtitle(title) + theme(axis.text.x = element_text(angle = 90))     
+  return(fraction_annotplot)
+}
+
+small_annotated_percent_plot <- annotated_percent_plot(smallT_annotationrate, smallG_annotationrate, "0.8-5 µm fraction")
+large_annotated_percent_plot <- annotated_percent_plot(largeT_annotationrate, largeG_annotationrate, "5-20 µm fraction")
+
+stations / small_annotated_percent_plot / (large_annotated_percent_plot + ylab(""))
+```
+consistent upper size fractions? try adding this as a shape? 
+
+
+relationship between mapping rate and annotation rate:
+
+```{r}
+annotated_V_rate_plot <- function(Tresults, Gresults, metaT, metaG, title, sizefraction){
+  Tresults_rate <- Tresults$sums_final[c("run_accession", "rate")]
+  Gresults_rate <- Gresults$sums_final[c("run_accession", "rate")]
+  results_rate <- rbind(Tresults_rate, Gresults_rate)
+  annotTG <- rbind(metaT, metaG)
+  annotTG <- annotTG[order(annotTG$Longitude),]
+  annotTG <- annotTG %>% filter(Latitude > 0)
+  annotTG <- merge(annotTG, results_rate, by = "run_accession")
+  annotTG$Station<- str_sub(annotTG$Station, 6)
+  order <- unique(annotTG$Station)
+  annotTG$Station_o <- factor(annotTG$Station, levels = order)
+  annotTG$size <- sizefraction
+  
+  annotateVrate<- ggplot(annotTG, aes(x = rate, y = percentAnnotated  , color = type , shape = Device)) + geom_point(size=4, alpha = 0.8) + theme_bw() +scale_color_manual(values = c("#008080","#E69F00")) +ylab("Percent of mapped reads annotated") + xlab("Mapping Rate") + theme(text = element_text(size = 12))+ ggtitle(title) + facet_grid(~type, scales = "free_x" )     
+  return(annotateVrate)
+}
+  
+
+small_annotatedVrate_plot <- annotated_V_rate_plot(smallT_results, smallG_results, smallT_annotationrate, smallG_annotationrate, "0.8-5 µm fraction", "small")
+
+large_annotatedVrate_plot <- annotated_V_rate_plot(largeT_results, largeG_results, largeT_annotationrate, largeG_annotationrate, "5-20 µm fraction", "large")
+
+
+  small_annotatedVrate_plot/large_annotatedVrate_plot
+```
+
+TPM GO heat maps
+
+```{r}
+
+## function to get data frame with tpm totals for each GO term 
+GOtpms <- function(tpm) {
+  
+  metaTtpm_list <- list()
+
+  for (i in 1:length(names(tpm))) {
+    name <- (names(tpm)[i])
+  
+    newdf <- data.frame(row.names(tpm), tpm[[i]])
+    names(newdf) <- c("geneid", names(tpm)[i] )
+  
+    new_annoted <- merge(newdf, pfamGOannots[,c("GO_desc", "geneid")], by = "geneid")
+  
+    new_annoted_summarized<- new_annoted %>% group_by(GO_desc) %>% summarize( !!name  := sum(!! rlang::sym(name)))
+  
+    metaTtpm_list[[name]] <- as.data.frame(new_annoted_summarized)
+    }
+
+  go_tpm<- metaTtpm_list %>% purrr::reduce(left_join, by = "GO_desc")
+  return(go_tpm)
+}
+
+metaTtpm_small <- read.table("metaT_PhaeoCat_na_med_so_small.merged.tpm", row.names =1, header = TRUE)
+metaT_go_tpm_small <-  GOtpms(metaTtpm_small)
+metaGtpm_small <- read.table("metaG_PhaeoCat_na_med_so_small.merged.tpm", row.names =1, header = TRUE)
+metaG_go_tpm_small <-  GOtpms(metaGtpm_small)
+
+metaTtpm_large <- read.table("metaT_PhaeoCat_na_med_so.merged.tpm", row.names =1, header = TRUE)
+metaT_go_tpm_large <-  GOtpms(metaTtpm_large)
+metaGtpm_large <- read.table("metaG_PhaeoCat_na_med_so.merged.tpm", row.names =1, header = TRUE)
+metaG_go_tpm_large <-  GOtpms(metaGtpm_large)
+
+
+TG_go_tpm<- list(metaT_go_tpm_small, metaG_go_tpm_small, metaT_go_tpm_large ,metaG_go_tpm_large ) %>% purrr::reduce(left_join, by = "GO_desc")
+
+row.names(TG_go_tpm) <- TG_go_tpm$GO_desc
+TG_go_tpm <- subset(TG_go_tpm, select=-c(GO_desc))
+TG_go_tpm <- log(TG_go_tpm +1)
+
+T_meta <- metaT_metaData_na_med_so %>% filter(run_accession %in% names(TG_go_tpm)) %>% dplyr::select(run_accession, "Fraction.lower...µm.", Device)
+names(T_meta)<- c("run_accession", "Fraction", "Device")
+T_meta$type <- "metaT"
+
+G_meta<- metaG_metaData_na_med_so %>% filter(run_accession %in% names(TG_go_tpm)) %>% dplyr::select(run_accession, "Fraction.lower..µm.", Device)
+names(G_meta)<- c("run_accession", "Fraction", "Device")
+G_meta$type <- "metaG"
+
+sample_meta<- rbind(T_meta, G_meta)
+row.names(sample_meta) <- sample_meta$run_accession
+sample_meta <- subset(sample_meta , select=-c(run_accession))
+sample_meta$Fraction <- as.character(sample_meta$Fraction )
+
+pheatmap(TG_go_tpm, annotation_col = sample_meta)
+```
+
+
+Save:
+```{r}
+save_pheatmap_png <- function(x, filename, width=3000, height=5500, res = 150) {
+  png(filename, width = width, height = height, res = res)
+  grid::grid.newpage()
+  grid::grid.draw(x$gtable)
+  dev.off()
+}
+
+allsamples_heat <- pheatmap(TG_go_tpm, annotation_col = sample_meta)
+
+save_pheatmap_png(allsamples_heat, "allsamples_heat.png")
+
+```
+
+
+REDUCE
+```{r}
+TG_go_tpm$total <- rowSums(TG_go_tpm)
+TG_go_tpm_reduce<- TG_go_tpm%>% filter(total >5) %>% dplyr::select(-c(total))
+
+allsamples_heat <- pheatmap(TG_go_tpm_reduce, annotation_col = sample_meta)
+
+```
+
+
+```{r}
+save_pheatmap_png(allsamples_heat, "allsamples_heat.png")
+```
+
+
+
+for aggregated tpm go heat meap
+```{r}
+metaTtpm <- read.table("metaT_PhaeoCat_na_med_so.merged.tpm", row.names =1, header = TRUE)
+Tsamps<- names(metaTtpm)
+
+metaTtpm$rowsums <- rowSums(metaTtpm)
+metaTtpm<-metaTtpm[metaTtpm$rowsums > 0,]
+
+#74,655
+
+metaTtpm$geneid <- row.names(metaTtpm)
+metaTtpm <- metaTtpm %>% dplyr::select(geneid, rowsums)
+
+metTtpm_annot <- merge(metaTtpm, pfamGOannots, by = "geneid")
+
+metTtpm_annot_summarized<- metTtpm_annot %>% group_by(GO_desc) %>% summarize(totalTPM_metaT = sum(rowsums))
+
+metaGtpm <- read.table("metaG_PhaeoCat_na_med_so.merged.tpm", row.names =1, header = TRUE)
+Gsamps<- names(metaGtpm)
+
+metaGtpm$rowsums <- rowSums(metaGtpm)
+metaGtpm<-metaGtpm[metaGtpm$rowsums > 0,]
+
+#74,655
+
+metaGtpm$geneid <- row.names(metaGtpm)
+metaGtpm <- metaGtpm %>% dplyr::select(geneid, rowsums)
+
+metGtpm_annot <- merge(metaGtpm, pfamGOannots, by = "geneid")
+
+metGtpm_annot_summarized<- metGtpm_annot %>% group_by(GO_desc) %>% summarize(totalTPM_metaG = sum(rowsums))
+```
+
+```{r}
+annots_summarizes<-merge(metTtpm_annot_summarized, metGtpm_annot_summarized, by = "GO_desc", all=TRUE)
+annots_summarizes[is.na(annots_summarizes)] <- 0
+```
+
+
+```{r}
+row.names(annots_summarizes) <- annots_summarizes$GO_desc
+annots_summarizes<- annots_summarizes %>% dplyr::select(-c(GO_desc))
+annots_summarizes$metaT <- log(annots_summarizes$totalTPM_metaT +1)
+annots_summarizes$metaG <- log(annots_summarizes$totalTPM_metaG +1)
+
+
+
+largefracheat<- pheatmap(annots_summarizes[,c("metaT", "metaG")], colorRampPalette((brewer.pal(n = 7, name =
+  "Blues")))(100) )
+
+save_pheatmap_png(largefracheat, "largefracheat.png")
+```
+
+
+```{r}
+annots_summarizes_reduced <- annots_summarizes %>%  filter( totalTPM_metaG >=50 | totalTPM_metaT >=50)
+
+pheatmap(annots_summarizes_reduced[,c("metaT", "metaG")])
+```
+
+
+
+```{r}
+smetaTtpm <- read.table("metaT_PhaeoCat_na_med_so_small.merged.tpm", row.names =1, header = TRUE)
+
+smetaTtpm$rowsums <- rowSums(smetaTtpm)
+smetaTtpm<-smetaTtpm[smetaTtpm$rowsums > 0,]
+
+#277,035
+
+smetaTtpm$geneid <- row.names(smetaTtpm)
+smetaTtpm <- smetaTtpm %>% dplyr::select(geneid, rowsums)
+
+smetTtpm_annot <- merge(smetaTtpm, pfamGOannots, by = "geneid")
+
+smetTtpm_annot_summarized<- smetTtpm_annot %>% group_by(GO_desc) %>% summarize(totalTPM_metaT_small = sum(rowsums))
+```
+
+
+```{r}
+smetaGtpm <- read.table("metaG_PhaeoCat_na_med_so_small.merged.tpm", row.names =1, header = TRUE)
+
+smetaGtpm$rowsums <- rowSums(smetaGtpm)
+smetaGtpm<-smetaGtpm[smetaGtpm$rowsums > 0,]
+
+smetaGtpm$geneid <- row.names(smetaGtpm)
+smetaGtpm <- smetaGtpm %>% dplyr::select(geneid, rowsums)
+
+smetGtpm_annot <- merge(smetaGtpm, pfamGOannots, by = "geneid")
+
+smetGtpm_annot_summarized<- smetGtpm_annot %>% group_by(GO_desc) %>% summarize(totalTPM_metaG_small = sum(rowsums))
+```
+
+```{r}
+annots_summarizes<-merge(annots_summarizes, smetGtpm_annot_summarized, by = "GO_desc", all=TRUE)
+annots_summarizes<- merge(smetTtpm_annot_summarized, annots_summarizes, by = "GO_desc", all=TRUE)
+annots_summarizes[is.na(annots_summarizes)] <- 0
+
+annots_summarizes$metaT_large <- log(annots_summarizes$totalTPM_metaT +1)
+annots_summarizes$metaG_large <- log(annots_summarizes$totalTPM_metaG +1)
+annots_summarizes$metaT_small <- log(annots_summarizes$totalTPM_metaT_small +1)
+annots_summarizes$metaG_small <- log(annots_summarizes$totalTPM_metaG_small +1)
+
+row.names(annots_summarizes) <- annots_summarizes$GO_desc
+annots_summarizes<- annots_summarizes %>% dplyr::select(-c( GO_desc, totalTPM_metaT, totalTPM_metaG, totalTPM_metaT_small,  totalTPM_metaG_small ))
+
+annots_summarizes$total <- rowSums(annots_summarizes)
+annots_reduced<- annots_summarizes %>% filter(total >5) %>% dplyr::select(-c(total))
+```
+
+
+```{r}
+allfracsheat<- pheatmap(annots_reduced[,c("metaT_small", "metaG_small", "metaT_large", "metaG_large")])
+save_pheatmap_png(allfracsheat, "allfracheat.png")
+```
+
+
+```{r}
+attach("tara-taxassign-30-06-2020.RData")
+st.consensus <- readRDS("~/Desktop/phaeo-tara/st.consensus.rds")
+```
+from countframe, select rows that have are the right size fraction and depth (surf, large or small)
+
+remove columns with colsum = 0 
+
+```{r}
+small_surf_metabar <- read.csv("metabar.csv") %>% filter(Size.fraction.lower.threshold..micrometre. == 0.8 & Environmental.Feature == "(SRF) surface water layer (ENVO:00002042)")
+
+large_surf_metabar <-read.csv("metabar.csv") %>% filter(Size.fraction.lower.threshold..micrometre. == 5 & Environmental.Feature == "(SRF) surface water layer (ENVO:00002042)")
+
+surf_metabar <- read.csv("metabar.csv") %>% filter( Environmental.Feature == "(SRF) surface water layer (ENVO:00002042)" &  Size.fraction.lower.threshold..micrometre. %in% c(0.8, 5))
+
+surf_counts <- data.frame(t(subset(st.consensus, rownames(st.consensus) %in% surf_metabar$INSDC.run.accession.number.s. )))
+
+surf_counts$rowsum = rowSums(surf_counts)
+
+surf_counts_noz <- surf_counts %>% filter(rowsum >0 ) %>% dplyr::select(-rowsum)
+
+library("seqRFLP")
+
+sequences<- data.frame(row.names(surf_counts_noz), row.names(surf_counts_noz))
+
+surfseqs.fasta = dataframe2fas(sequences, file="surfseqs.fasta")
+
+```
+
+from taxframe select order phaeocystis 
+
+merge 
+
+```{r}
+tara_phaeo_df <- tara_tax_df %>% filter(Order == "Phaeocystales")
+```
+
+Only 11 seqs from Sarah classified as Phaeo and missing P.antarctica, P. pouchetii, and P. rex
+
+PR2 database has 357 phaeo seqs including all phaeo species - long enough should include V9 ....
+```{r}
+library(pr2database)
+phaeo_pr2 <- pr2 %>%  filter(order == "Phaeocystales") %>% dplyr::select("order", "genus", "species", "sequence_length")
+```
+
+merge sarah's taxonomy and count frames - any phae? 
+```{r}
+phaeosurfseqs<- merge( tara_phaeo_df, surf_counts_noz, by =0)
+```
+
+
+try reclassifying sequences with v13 of pr2 
+(done in qiime2)
+
+```{r}
+taxonomy <- read.csv("surfseqs_taxonomy.csv", stringsAsFactors = FALSE)
+names(taxonomy) <- c("row", "tax", "Confidence")
+row.names(taxonomy) <-taxonomy[[1]]
+taxonomy <- taxonomy[,(-1)]
+taxonomy <-  separate(taxonomy, tax, c("Kingdom","Supergroup", "division", "closs", "order", "family", "genus", "species"), sep = ";", fill = "right")
+taxonomy <- taxonomy[,c(1:8)]
+taxmat <- as.matrix(taxonomy)
+TAX = tax_table(taxmat)
+str(TAX)
+
+```
+
+no phaeo ... at all ..
+
+try reclassifying in dada2 with updates database?
+
+```{r}
+library(dada2)
+
+tara <- readRDS("st.consensus.rds")
+
+tara_tax <- assignTaxonomy(tara, "pr2_version_4.13.0_18S_dada2.fasta.gz", taxLevels = c("Kingdom","Supergroup","Division","Class","Order","Family","Genus","Species"), multithread = TRUE)
+
+
+```
+
+
+
+retrain classifier using v9 primers? 
+or just check if phaeo sequences get retained with v9 primers?
+in silico pcr? 
