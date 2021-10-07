@@ -1,0 +1,163 @@
+To build a tree from the Single-copy Core Gene Sequences output by Orthofinder:
+
+Navigate to the `Single_Copy_Orthologue_Sequences` directory inside the Orthofinder results directory.
+
+1. make a list of all the single copy orthologues by listing the file names, removing the fie extension, and sending the result to a file called `scg.txt`:
+
+```
+ls -1 *.fa | sed -e 's/\.fa$//' > scg.txt
+```
+
+2. Make an alignment for each individual Single-copy ortholog file by creating and submitting a slurm file similar to the following:
+
+```
+#!/bin/bash
+#SBATCH --partition=compute
+#SBATCH --job-name=muscle
+#SBATCH --mail-type=END,FAIL
+#SBATCH --nodes=1
+#SBATCH --mail-user=mmarsbrisbin@whoi.edu
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=24gb
+#SBATCH --time=12:00:00
+#SBATCH --output=muscle%j.log
+#SBATCH --error=muscle%j.err
+
+module load bio
+module load muscle/3.8.31
+
+for f in `cat scg.txt`; do muscle -in ${f}.fa -out ${f}.afa; done;
+```
+
+3. Trim the alignmnets so that each gene in the alignment file is the same length. Use the program `trimal` to do this. `trimal` needs to be installed with conda.
+
+```
+conda create -n trimal
+conda activate trimal
+conda install -c bioconda trimal
+```
+
+Then with the trimal environment active, make and run a slurm similar to:
+
+```
+#!/bin/bash
+#SBATCH --partition=compute
+#SBATCH --job-name=trimal
+#SBATCH --mail-type=END,FAIL
+#SBATCH --nodes=1
+#SBATCH --mail-user=mmarsbrisbin@whoi.edu
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=12gb
+#SBATCH --time=1:00:00
+#SBATCH --output=trimal%j.log
+#SBATCH --error=trimal%j.err
+
+conda activate trimal
+
+for f in `cat scg.txt`; do trimal -in ${f}.afa -out ${f}_trimmed.afa -automated1; done;
+```
+
+After finished, deactivate the trimal environment:
+
+```
+conda deactivate
+```
+
+4. Wrap the fasta sequences (make sure each sequence is only one line)
+
+for f in `cat scg.txt`; do cat ${f}_trimmed.afa | awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' > ${f}_trimmed_wrapped_1.afa; done
+
+5. Remove the empty first line from each trimmed alignment file:
+
+for f in `cat scg.txt`; do tail -n +2 ${f}_trimmed_wrapped_1.afa > ${f}_trimmed_wrapped_2.afa; done
+
+6. Make sure all alignment files have species in the same order:
+
+```
+conda create -n seqkit
+conda install-c bioconda seqkit
+conda activate seqkit
+```
+Then run:
+```
+for f in `cat scg.txt` ; do cat ${f}_trimmed_wrapped_2.afa | seqkit sort --quiet > ${f}_trimmed_wrapped_sorted.afa; done
+```
+
+deactivate:
+```
+conda deactivate
+```
+
+7. wrap and remove empty first line from the sorted alignments:
+
+wrap:
+```
+for f in `cat scg.txt`; do cat ${f}_trimmed_wrapped_sorted.afa | awk '/^>/ {printf("\n%s\n",$0);next; } { printf("%s",$0);}  END {printf("\n");}' > ${f}_trimmed_wrapped_sorted_1.afa; done
+```
+
+remove line 1:
+```
+for f in `cat scg.txt`; do tail -n +2 ${f}_trimmed_wrapped_sorted_1.afa > ${f}_trimmed_wrapped_sorted_2.afa; done
+```
+
+
+8. replace fasta headers in files so that the headers are just the species name
+
+Remove headers:
+
+```
+for f in `cat scg.txt`; do awk 'NR%2==0' ${f}_trimmed_wrapped_sorted_2.afa > ${f}_trimmed_wrapped_sorted_seqs.fa;done
+```
+make new headers by grabbing the headers from any of the sorted alignment fastas:  
+```
+grep -e ">" OG0008874_trimmed_wrapped_sorted_2.afa > species.txt
+cut species.txt -d '_' -f 1,2,3 > speciesonly.txt
+```
+
+interleave species names with sequences
+```
+for f in `cat scg.txt`; do paste -d'\n' speciesonly.txt ${f}_trimmed_wrapped_sorted_seqs.fa > ${f}_trimmed_wrapped_sorted_renamed.fa; done
+```
+
+9. concatenate the sequences
+
+```
+paste *_trimmed_wrapped_sorted_renamed.fa | sed -e 's/\t>.*//' -e 's/\t//' > merged_alignment.fa
+```
+
+then clean up the merged alignment to remove white spaces:
+
+```
+cat merged_alignment.fa |  tr -d "[:blank:]" > merged_alignment_final.fa
+```
+
+10. Finally make the tree.
+
+```
+conda create -n fasttree
+conda activate fasttree
+conda install -c bioconda fasttree
+```
+
+with fasttree environment open write and run a slurm similar to:
+
+```
+#!/bin/bash
+#SBATCH --partition=compute
+#SBATCH --job-name=fasttree
+#SBATCH --mail-type=END,FAIL
+#SBATCH --nodes=1
+#SBATCH --mail-user=mmarsbrisbin@whoi.edu
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=12gb
+#SBATCH --time=4:00:00
+#SBATCH --output=fasttree%j.log
+#SBATCH --error=fastree%j.err
+
+conda activate fasttree
+
+FastTree merged_alignment_final.fa > fasttree.nwk
+```
+
+
+11. download your fasttree.nwk to your local for treeviewing and prettifying with figtree or other software. 
