@@ -69,7 +69,9 @@ for f in `cat scg.txt`; do cat ${f}_trimmed.afa | awk '/^>/ {printf("\n%s\n",$0)
 
 5. Remove the empty first line from each trimmed alignment file:
 
+```
 for f in `cat scg.txt`; do tail -n +2 ${f}_trimmed_wrapped_1.afa > ${f}_trimmed_wrapped_2.afa; done
+```
 
 6. Make sure all alignment files have species in the same order:
 
@@ -79,6 +81,7 @@ conda install-c bioconda seqkit
 conda activate seqkit
 ```
 Then run:
+
 ```
 for f in `cat scg.txt` ; do cat ${f}_trimmed_wrapped_2.afa | seqkit sort --quiet > ${f}_trimmed_wrapped_sorted.afa; done
 ```
@@ -160,4 +163,4 @@ FastTree merged_alignment_final.fa > fasttree.nwk
 ```
 
 
-11. download your fasttree.nwk to your local for treeviewing and prettifying with figtree or other software. 
+11. download your fasttree.nwk to your local for treeviewing and prettifying with figtree or other software.
